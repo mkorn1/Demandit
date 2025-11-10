@@ -29,7 +29,7 @@ function ChatBot() {
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto bg-black shadow-2xl">
+    <div className="flex flex-col h-screen bg-black">
       {/* Header */}
       <div className="bg-gradient-to-r from-red-900 via-black to-blue-900 p-4 shadow-lg border-b border-red-900">
         <h1 className="text-2xl font-bold text-white">DemandIt! ChatBot</h1>
