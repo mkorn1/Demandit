@@ -1,9 +1,18 @@
 import { useState, useRef } from 'react'
+import { useDocuments } from '../context/DocumentContext'
 
 function DocumentSidebar() {
-  const [documents, setDocuments] = useState([])
-  const [selectedDoc, setSelectedDoc] = useState(null)
-  const [annotations, setAnnotations] = useState({}) // { docId: [{ id, type, content, position }] }
+  const {
+    documents,
+    selectedDoc,
+    annotations,
+    addDocument,
+    removeDocument,
+    addAnnotation,
+    removeAnnotation,
+    setSelectedDoc
+  } = useDocuments()
+  
   const [isCollapsed, setIsCollapsed] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -22,8 +31,7 @@ function DocumentSidebar() {
           uploadedAt: new Date()
         }
         
-        setDocuments(prev => [...prev, newDoc])
-        setSelectedDoc(newDoc.id)
+        addDocument(newDoc)
       }
       
       if (file.type.startsWith('image/')) {
@@ -42,34 +50,7 @@ function DocumentSidebar() {
   }
 
   const handleDeleteDocument = (docId) => {
-    setDocuments(prev => prev.filter(doc => doc.id !== docId))
-    if (selectedDoc === docId) {
-      setSelectedDoc(null)
-    }
-    // Remove annotations for deleted document
-    setAnnotations(prev => {
-      const newAnnotations = { ...prev }
-      delete newAnnotations[docId]
-      return newAnnotations
-    })
-  }
-
-  const addAnnotation = (docId, annotation) => {
-    setAnnotations(prev => ({
-      ...prev,
-      [docId]: [...(prev[docId] || []), {
-        id: Date.now(),
-        ...annotation,
-        createdAt: new Date()
-      }]
-    }))
-  }
-
-  const removeAnnotation = (docId, annotationId) => {
-    setAnnotations(prev => ({
-      ...prev,
-      [docId]: (prev[docId] || []).filter(ann => ann.id !== annotationId)
-    }))
+    removeDocument(docId)
   }
 
   const selectedDocument = documents.find(doc => doc.id === selectedDoc)
