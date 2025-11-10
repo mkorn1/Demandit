@@ -256,13 +256,16 @@ CREATE POLICY "Users can delete company templates"
 -- ============================================
 -- This function can check case_users without triggering RLS recursion
 -- Must be created BEFORE policies that use it
+-- SECURITY DEFINER allows it to bypass RLS when querying case_users
 CREATE OR REPLACE FUNCTION is_user_on_case(p_case_id UUID, p_user_id UUID)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
+STABLE
 AS $$
 BEGIN
+  -- Use SECURITY DEFINER to bypass RLS - this function runs with creator's privileges
   RETURN EXISTS (
     SELECT 1 FROM case_users
     WHERE case_id = p_case_id
@@ -270,6 +273,9 @@ BEGIN
   );
 END;
 $$;
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION is_user_on_case(UUID, UUID) TO authenticated;
 
 -- ============================================
 -- 14.5. RLS Policies for cases (updated)
@@ -281,14 +287,23 @@ DROP POLICY IF EXISTS "Users can update their own cases" ON cases;
 DROP POLICY IF EXISTS "Users can delete their own cases" ON cases;
 
 -- Users can view cases they're part of
--- Fix: Use security definer function to avoid recursion with case_users policies
+-- Fix: Check company membership first, then verify user is on case
+-- This avoids recursion by checking company before calling the function
 CREATE POLICY "Users can view cases they're part of"
   ON cases FOR SELECT
   USING (
-    -- User is the creator
-    user_id = auth.uid()
-    -- OR user is on the case (checked via function that bypasses RLS)
-    OR is_user_on_case(cases.id, auth.uid())
+    -- First check: Case is in user's company
+    EXISTS (
+      SELECT 1 FROM user_profiles up
+      WHERE up.id = auth.uid()
+      AND up.company_id = cases.company_id
+    )
+    AND (
+      -- User is the creator
+      user_id = auth.uid()
+      -- OR user is on the case (checked via function that bypasses RLS)
+      OR is_user_on_case(cases.id, auth.uid())
+    )
   );
 
 -- Users can create cases in their company
@@ -327,11 +342,14 @@ CREATE POLICY "Users can delete cases they're part of"
 -- 15. RLS Policies for case_users
 -- ============================================
 -- Users can view case_users for cases in their company
--- Fix: Check cases table instead of case_users to avoid recursion
+-- Fix: Only check company membership, don't verify user is on case (that would cause recursion)
+-- If they can see the case_users row, they're already on the case or in the same company
 DROP POLICY IF EXISTS "Users can view case_users for their cases" ON case_users;
 CREATE POLICY "Users can view case_users for their cases"
   ON case_users FOR SELECT
   USING (
+    -- Simply check that the case is in the user's company
+    -- Don't check if user is on case - that would cause recursion
     EXISTS (
       SELECT 1 FROM cases c
       JOIN user_profiles up ON up.id = auth.uid()
