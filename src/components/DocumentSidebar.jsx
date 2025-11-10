@@ -13,7 +13,7 @@ function DocumentSidebar() {
     setSelectedDoc
   } = useDocuments()
   
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const fileInputRef = useRef(null)
 
   const handleFileUpload = (e) => {
