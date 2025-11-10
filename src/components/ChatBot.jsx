@@ -3,13 +3,16 @@ import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
 import { CHAT_TYPES } from '../config/chatTypes'
 import { useDocuments } from '../context/DocumentContext'
+import { useTemplates } from '../context/TemplateContext'
 import { generateLegalDemandLetter } from '../services/llmService'
 import { getCaseMessages, addCaseMessage, updateCaseMetadata } from '../services/caseService'
 
-function ChatBot({ caseId, caseData }) {
+function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatTypeChange }) {
   const { documents } = useDocuments()
+  const { selectedTemplate, getTemplate } = useTemplates()
   const [messages, setMessages] = useState([])
-  const [selectedChatType, setSelectedChatType] = useState('')
+  const [internalChatType, setInternalChatType] = useState('')
+  const selectedChatType = externalChatType !== undefined ? externalChatType : internalChatType
   const [isGenerating, setIsGenerating] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -54,9 +57,9 @@ function ChatBot({ caseId, caseData }) {
         }])
       }
 
-      // Load selected chat type from metadata
-      if (caseData?.metadata?.selectedChatType) {
-        setSelectedChatType(caseData.metadata.selectedChatType)
+      // Load selected chat type from metadata (if not provided externally)
+      if (externalChatType === undefined && caseData?.metadata?.selectedChatType) {
+        setInternalChatType(caseData.metadata.selectedChatType)
       }
     } catch (error) {
       console.error('Error loading case data:', error)
@@ -90,7 +93,11 @@ function ChatBot({ caseId, caseData }) {
   }
 
   const handleChatTypeChange = async (newChatType) => {
-    setSelectedChatType(newChatType)
+    if (onChatTypeChange) {
+      onChatTypeChange(newChatType)
+    } else {
+      setInternalChatType(newChatType)
+    }
     if (caseId) {
       try {
         await updateCaseMetadata(caseId, {
@@ -133,8 +140,11 @@ function ChatBot({ caseId, caseData }) {
         // Get all messages including the new one
         const allMessages = [...messages, userMessage]
         
-        // Generate the demand letter
-        const demandLetter = await generateLegalDemandLetter(allMessages, documents)
+        // Get selected template if one is selected
+        const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
+        
+        // Generate the demand letter with template if selected
+        const demandLetter = await generateLegalDemandLetter(allMessages, documents, selectedTemplateData)
         
         // Remove loading message and add the generated letter
         const botMessage = {
@@ -190,36 +200,7 @@ function ChatBot({ caseId, caseData }) {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-black">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-red-900 via-black to-blue-900 p-4 shadow-lg border-b border-red-900">
-        <div className="flex items-center gap-4 mb-2">
-          <h1 className="text-2xl font-bold text-white">DemandIt! ChatBot</h1>
-          <div className="relative">
-            <select
-              value={selectedChatType}
-              onChange={(e) => handleChatTypeChange(e.target.value)}
-              className="px-4 py-2 pr-8 bg-black text-white border border-blue-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-900 focus:border-red-900 appearance-none cursor-pointer"
-            >
-              <option value="">Select ChatType</option>
-              <option value={CHAT_TYPES.BASE_CASE_BOT.id}>
-                {CHAT_TYPES.BASE_CASE_BOT.name}
-              </option>
-            </select>
-            <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-              <svg className="w-4 h-4 text-white opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-white opacity-80">
-          {selectedChatType 
-            ? `Active: ${Object.values(CHAT_TYPES).find(type => type.id === selectedChatType)?.name || selectedChatType}`
-            : 'Select a chat type to begin'}
-        </p>
-      </div>
-
+    <div className="flex flex-col flex-1 bg-black overflow-hidden">
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black">
         {loading ? (

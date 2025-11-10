@@ -1,8 +1,8 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 
 const TemplateContext = createContext()
 
-export function TemplateProvider({ children }) {
+export function TemplateProvider({ children, initialSelectedTemplate = null, onTemplateChange = null }) {
   const [templates, setTemplates] = useState([
     {
       id: 'default-demand-letter',
@@ -108,7 +108,27 @@ Sincerely,
       isDefault: true
     }
   ])
-  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [internalSelectedTemplate, setInternalSelectedTemplate] = useState(initialSelectedTemplate)
+  
+  // Sync internal state when initialSelectedTemplate changes (e.g., when loading a new case)
+  useEffect(() => {
+    if (initialSelectedTemplate !== null && initialSelectedTemplate !== undefined) {
+      setInternalSelectedTemplate(initialSelectedTemplate)
+    }
+  }, [initialSelectedTemplate])
+  
+  // Use controlled value if provided, otherwise use internal state
+  const selectedTemplate = initialSelectedTemplate !== null && initialSelectedTemplate !== undefined 
+    ? initialSelectedTemplate 
+    : internalSelectedTemplate
+  
+  const handleSetSelectedTemplate = (templateId) => {
+    if (onTemplateChange) {
+      onTemplateChange(templateId)
+    } else {
+      setInternalSelectedTemplate(templateId)
+    }
+  }
 
   const addTemplate = (template) => {
     const newTemplate = {
@@ -132,7 +152,7 @@ Sincerely,
   const deleteTemplate = (templateId) => {
     setTemplates(prev => prev.filter(template => template.id !== templateId))
     if (selectedTemplate === templateId) {
-      setSelectedTemplate(null)
+      handleSetSelectedTemplate(null)
     }
   }
 
@@ -149,7 +169,7 @@ Sincerely,
         updateTemplate,
         deleteTemplate,
         getTemplate,
-        setSelectedTemplate
+        setSelectedTemplate: handleSetSelectedTemplate
       }}
     >
       {children}

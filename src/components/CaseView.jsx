@@ -5,7 +5,9 @@ import DocumentSidebar from './DocumentSidebar'
 import TemplateSidebar from './TemplateSidebar'
 import { DocumentProvider } from '../context/DocumentContext'
 import { TemplateProvider } from '../context/TemplateContext'
-import { getCase } from '../services/caseService'
+import { getCase, updateCaseMetadata } from '../services/caseService'
+import { useTemplates } from '../context/TemplateContext'
+import { CHAT_TYPES } from '../config/chatTypes'
 
 function CaseView() {
   const { caseId } = useParams()
@@ -13,6 +15,8 @@ function CaseView() {
   const [caseData, setCaseData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedChatType, setSelectedChatType] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
 
   useEffect(() => {
     loadCase()
@@ -23,10 +27,61 @@ function CaseView() {
       setLoading(true)
       const data = await getCase(caseId)
       setCaseData(data)
+      // Load chat type and template from metadata
+      if (data?.metadata?.selectedChatType) {
+        setSelectedChatType(data.metadata.selectedChatType)
+      }
+      if (data?.metadata?.selectedTemplate) {
+        setSelectedTemplate(data.metadata.selectedTemplate)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleChatTypeChange = async (newChatType) => {
+    setSelectedChatType(newChatType)
+    if (caseId && caseData) {
+      try {
+        await updateCaseMetadata(caseId, {
+          ...(caseData?.metadata || {}),
+          selectedChatType: newChatType
+        })
+        // Update local caseData
+        setCaseData(prev => ({
+          ...prev,
+          metadata: {
+            ...(prev?.metadata || {}),
+            selectedChatType: newChatType
+          }
+        }))
+      } catch (error) {
+        console.error('Error saving chat type:', error)
+      }
+    }
+  }
+
+  const handleTemplateChange = async (templateId) => {
+    setSelectedTemplate(templateId)
+    if (caseId && caseData) {
+      try {
+        await updateCaseMetadata(caseId, {
+          ...(caseData?.metadata || {}),
+          selectedTemplate: templateId
+        })
+        // Update local caseData
+        setCaseData(prev => ({
+          ...prev,
+          metadata: {
+            ...(prev?.metadata || {}),
+            selectedTemplate: templateId
+          }
+        }))
+      } catch (error) {
+        console.error('Error saving template selection:', error)
+      }
     }
   }
 
@@ -56,7 +111,10 @@ function CaseView() {
 
   return (
     <DocumentProvider>
-      <TemplateProvider>
+      <TemplateProvider 
+        initialSelectedTemplate={selectedTemplate}
+        onTemplateChange={handleTemplateChange}
+      >
         <div className="h-screen w-screen bg-black flex">
           {/* Both Sidebars Side by Side */}
           <DocumentSidebar />
@@ -64,30 +122,71 @@ function CaseView() {
           
           {/* Main Content */}
           <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="bg-gradient-to-r from-red-900 via-black to-blue-900 p-4 border-b border-red-900">
-              <div className="flex items-center justify-between">
-                <div>
-                  <button
-                    onClick={() => navigate('/')}
-                    className="text-white hover:text-gray-300 mb-2 flex items-center gap-2"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                    </svg>
-                    Back to Cases
-                  </button>
-                  <h1 className="text-xl font-bold text-white">{caseData.title}</h1>
-                  {caseData.contact_info?.recipient?.company && (
-                    <p className="text-sm text-gray-300">{caseData.contact_info.recipient.company}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-            <ChatBot caseId={caseId} caseData={caseData} />
+            <Header 
+              caseData={caseData} 
+              navigate={navigate} 
+              selectedChatType={selectedChatType}
+              onChatTypeChange={handleChatTypeChange}
+            />
+            <ChatBot 
+              caseId={caseId} 
+              caseData={caseData}
+              selectedChatType={selectedChatType}
+              onChatTypeChange={handleChatTypeChange}
+            />
           </div>
         </div>
       </TemplateProvider>
     </DocumentProvider>
+  )
+}
+
+// Compact header component
+function Header({ caseData, navigate, selectedChatType, onChatTypeChange }) {
+  const { selectedTemplate, getTemplate } = useTemplates()
+
+  return (
+    <div className="bg-gradient-to-r from-red-900 via-black to-blue-900 px-4 py-3 border-b border-red-900">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <button
+            onClick={() => navigate('/')}
+            className="text-white hover:text-gray-300 flex items-center gap-1 shrink-0"
+            title="Back to Cases"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-bold text-white truncate">{caseData.title}</h1>
+        </div>
+        
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="relative">
+            <select
+              value={selectedChatType || ''}
+              onChange={(e) => onChatTypeChange(e.target.value)}
+              className="px-3 py-1.5 pr-8 bg-black text-white text-sm border border-blue-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-900 focus:border-red-900 appearance-none cursor-pointer"
+            >
+              <option value="">Select ChatType</option>
+              <option value={CHAT_TYPES.BASE_CASE_BOT.id}>
+                {CHAT_TYPES.BASE_CASE_BOT.name}
+              </option>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+              <svg className="w-3 h-3 text-white opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          {selectedTemplate && (
+            <span className="px-2 py-1 bg-blue-900/50 rounded text-xs border border-blue-800 text-white whitespace-nowrap">
+              {getTemplate(selectedTemplate)?.name || 'Template'}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
