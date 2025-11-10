@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
 import { CHAT_TYPES } from '../config/chatTypes'
 import { useDocuments } from '../context/DocumentContext'
 import { useTemplates } from '../context/TemplateContext'
-import { generateLegalDemandLetter } from '../services/llmService'
+import { generateLegalDemandLetter, chatAssistant, assembleDetailsSummary } from '../services/llmService'
 import { getCaseMessages, addCaseMessage, updateCaseMetadata } from '../services/caseService'
 
 function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatTypeChange }) {
@@ -15,6 +15,16 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
   const selectedChatType = externalChatType !== undefined ? externalChatType : internalChatType
   const [isGenerating, setIsGenerating] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [isReadyToGenerate, setIsReadyToGenerate] = useState(false)
+  const [detailsSummary, setDetailsSummary] = useState(null)
+  const messagesEndRef = useRef(null)
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages])
 
   // Load messages and metadata on mount
   useEffect(() => {
@@ -24,7 +34,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       // Fallback for when no caseId (shouldn't happen in normal flow)
       setMessages([{
         id: 1,
-        text: "Hello! I'm your chatbot assistant. Select a chat type and start a conversation to generate a legal demand letter.",
+        text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
         sender: 'bot',
         timestamp: new Date()
       }])
@@ -51,7 +61,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         // No messages yet, show welcome message
         setMessages([{
           id: 1,
-          text: "Hello! I'm your chatbot assistant. Select a chat type and start a conversation to generate a legal demand letter.",
+          text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
           sender: 'bot',
           timestamp: new Date()
         }])
@@ -61,6 +71,10 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       if (externalChatType === undefined && caseData?.metadata?.selectedChatType) {
         setInternalChatType(caseData.metadata.selectedChatType)
       }
+
+      // Reset ready state when loading messages
+      setIsReadyToGenerate(false)
+      setDetailsSummary(null)
     } catch (error) {
       console.error('Error loading case data:', error)
       setMessages([{
@@ -98,6 +112,9 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
     } else {
       setInternalChatType(newChatType)
     }
+    // Reset ready state when chat type changes
+    setIsReadyToGenerate(false)
+    setDetailsSummary(null)
     if (caseId) {
       try {
         await updateCaseMetadata(caseId, {
@@ -111,6 +128,12 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
   }
 
   const handleSendMessage = async (messageText) => {
+    // Check if user is requesting to generate the letter
+    const isGenerateRequest = messageText.toLowerCase().includes('generate') && 
+                              (messageText.toLowerCase().includes('letter') || 
+                               messageText.toLowerCase().includes('draft') ||
+                               messageText.toLowerCase().includes('ready'))
+
     // Add user message immediately
     const userMessage = {
       id: Date.now(),
@@ -122,14 +145,14 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
     setMessages(prev => [...prev, userMessage])
     await saveMessage(userMessage)
 
-    // If Base Case Bot chat type is selected, generate the letter
+    // If Base Case Bot chat type is selected
     if (selectedChatType === CHAT_TYPES.BASE_CASE_BOT.id) {
       setIsGenerating(true)
       
       // Add a loading message
       const loadingMessage = {
         id: Date.now() + 1,
-        text: 'Generating your legal demand letter...',
+        text: isGenerateRequest ? 'Assembling details and generating your demand letter...' : 'Processing your message...',
         sender: 'bot',
         timestamp: new Date(),
         isLoading: true
@@ -139,29 +162,83 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       try {
         // Get all messages including the new one
         const allMessages = [...messages, userMessage]
-        
-        // Get selected template if one is selected
-        const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
-        
-        // Generate the demand letter with template if selected
-        const demandLetter = await generateLegalDemandLetter(allMessages, documents, caseData, selectedTemplateData)
-        
-        // Remove loading message and add the generated letter
-        const botMessage = {
-          id: Date.now() + 2,
-          text: demandLetter,
-          sender: 'bot',
-          timestamp: new Date()
+
+        // If user explicitly requests generation, generate the letter
+        if (isGenerateRequest) {
+          // First assemble details summary if not already done
+          if (!detailsSummary) {
+            const summary = await assembleDetailsSummary(allMessages, documents, caseData)
+            setDetailsSummary(summary)
+            
+            // Add summary message
+            const summaryMessage = {
+              id: Date.now() + 2,
+              text: `**Summary of Collected Details and Evidence:**\n\n${summary}\n\n---\n\nGenerating your demand letter now...`,
+              sender: 'bot',
+              timestamp: new Date()
+            }
+            
+            setMessages(prev => {
+              const withoutLoading = prev.filter(msg => !msg.isLoading)
+              return [...withoutLoading, summaryMessage]
+            })
+            await saveMessage(summaryMessage)
+          }
+
+          // Get selected template if one is selected
+          const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
+          
+          // Generate the demand letter with template if selected
+          const demandLetter = await generateLegalDemandLetter(allMessages, documents, caseData, selectedTemplateData)
+          
+          // Remove loading message and add the generated letter
+          const botMessage = {
+            id: Date.now() + 3,
+            text: demandLetter,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          
+          setMessages(prev => {
+            const withoutLoading = prev.filter(msg => !msg.isLoading)
+            return [...withoutLoading, botMessage]
+          })
+          
+          await saveMessage(botMessage)
+          setIsReadyToGenerate(false) // Reset after generation
+        } else {
+          // Use conversational assistant to gather details
+          const assistantResponse = await chatAssistant(allMessages, documents, caseData)
+          
+          // Check if assistant indicates readiness (look for keywords)
+          const responseLower = assistantResponse.toLowerCase()
+          const seemsReady = responseLower.includes('ready to generate') || 
+                            responseLower.includes('all details') ||
+                            responseLower.includes('ready to draft') ||
+                            responseLower.includes('summary') ||
+                            (responseLower.includes('complete') && responseLower.includes('information'))
+          
+          if (seemsReady && !isReadyToGenerate) {
+            setIsReadyToGenerate(true)
+          }
+          
+          // Remove loading message and add assistant response
+          const botMessage = {
+            id: Date.now() + 2,
+            text: assistantResponse,
+            sender: 'bot',
+            timestamp: new Date()
+          }
+          
+          setMessages(prev => {
+            const withoutLoading = prev.filter(msg => !msg.isLoading)
+            return [...withoutLoading, botMessage]
+          })
+          
+          await saveMessage(botMessage)
         }
-        
-        setMessages(prev => {
-          const withoutLoading = prev.filter(msg => !msg.isLoading)
-          return [...withoutLoading, botMessage]
-        })
-        
-        await saveMessage(botMessage)
       } catch (error) {
-        console.error('Error generating demand letter:', error)
+        console.error('Error in chat:', error)
         
         // Remove loading message and add error message
         const errorMessage = {
@@ -206,26 +283,40 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
   }
 
   return (
-    <div className="flex flex-col flex-1 bg-black overflow-hidden">
+    <div className="flex flex-col flex-1 bg-black overflow-hidden min-h-0">
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black min-h-0">
         {loading ? (
           <div className="text-center text-gray-400 py-8">Loading messages...</div>
         ) : (
-          messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))
+          <>
+            {messages.map((message) => (
+              <ChatMessage key={message.id} message={message} />
+            ))}
+            <div ref={messagesEndRef} />
+          </>
         )}
       </div>
 
       {/* Input Area */}
       <div className="border-t border-blue-900 p-4 bg-black">
+        {isReadyToGenerate && selectedChatType === CHAT_TYPES.BASE_CASE_BOT.id && (
+          <div className="mb-3 p-3 bg-blue-950 border border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-200 mb-2">
+              ✓ All details have been collected. Ready to generate your demand letter.
+            </p>
+            <p className="text-xs text-blue-300 opacity-75">
+              Type "generate letter" or "ready" to create your demand letter, or continue the conversation to add more details.
+            </p>
+          </div>
+        )}
         <ChatInput 
           onSendMessage={handleSendMessage} 
           disabled={isGenerating}
           onGenerateDraft={handleGenerateDraft}
           hasTemplate={!!selectedTemplate}
           isGeneratingDraft={false}
+          isReadyToGenerate={isReadyToGenerate}
         />
       </div>
     </div>

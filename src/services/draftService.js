@@ -79,13 +79,7 @@ export async function getDraftVersions(caseId) {
   // RLS will enforce that user is part of the case
   const { data, error } = await supabase
     .from('demand_letter_drafts')
-    .select(`
-      *,
-      created_by_user:user_profiles!demand_letter_drafts_created_by_fkey(
-        id,
-        id
-      )
-    `)
+    .select('*')
     .eq('case_id', caseId)
     .order('version_number', { ascending: false })
 
