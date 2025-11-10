@@ -25,13 +25,35 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signUp = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({
+  const signUp = async (email, password, companyId) => {
+    if (!companyId) {
+      throw new Error('Company ID is required')
+    }
+
+    // Create user account
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
     })
-    if (error) throw error
-    return data
+    if (authError) throw authError
+
+    // If user was created, create user profile
+    if (authData.user) {
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: authData.user.id,
+          company_id: companyId,
+        })
+
+      if (profileError) {
+        // If profile creation fails, we should handle this
+        // For now, we'll throw the error
+        throw profileError
+      }
+    }
+
+    return authData
   }
 
   const signIn = async (email, password) => {

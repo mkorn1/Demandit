@@ -252,7 +252,27 @@ CREATE POLICY "Users can delete company templates"
   );
 
 -- ============================================
--- 14. RLS Policies for cases (updated)
+-- 14. Helper function: Check if user is on case (bypasses RLS)
+-- ============================================
+-- This function can check case_users without triggering RLS recursion
+-- Must be created BEFORE policies that use it
+CREATE OR REPLACE FUNCTION is_user_on_case(p_case_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM case_users
+    WHERE case_id = p_case_id
+    AND user_id = p_user_id
+  );
+END;
+$$;
+
+-- ============================================
+-- 14.5. RLS Policies for cases (updated)
 -- ============================================
 -- Drop old policies
 DROP POLICY IF EXISTS "Users can view their own cases" ON cases;
@@ -261,14 +281,14 @@ DROP POLICY IF EXISTS "Users can update their own cases" ON cases;
 DROP POLICY IF EXISTS "Users can delete their own cases" ON cases;
 
 -- Users can view cases they're part of
+-- Fix: Use security definer function to avoid recursion with case_users policies
 CREATE POLICY "Users can view cases they're part of"
   ON cases FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = cases.id
-      AND case_users.user_id = auth.uid()
-    )
+    -- User is the creator
+    user_id = auth.uid()
+    -- OR user is on the case (checked via function that bypasses RLS)
+    OR is_user_on_case(cases.id, auth.uid())
   );
 
 -- Users can create cases in their company
@@ -282,85 +302,126 @@ CREATE POLICY "Users can create cases in their company"
   );
 
 -- Users can update cases they're part of
+-- Fix: Use security definer function to avoid recursion with case_users policies
 CREATE POLICY "Users can update cases they're part of"
   ON cases FOR UPDATE
   USING (
-    EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = cases.id
-      AND case_users.user_id = auth.uid()
-    )
+    -- User is the creator
+    user_id = auth.uid()
+    -- OR user is on the case (checked via function that bypasses RLS)
+    OR is_user_on_case(cases.id, auth.uid())
   );
 
 -- Users can delete cases they're part of
+-- Fix: Use security definer function to avoid recursion with case_users policies
 CREATE POLICY "Users can delete cases they're part of"
   ON cases FOR DELETE
   USING (
-    EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = cases.id
-      AND case_users.user_id = auth.uid()
-    )
+    -- User is the creator
+    user_id = auth.uid()
+    -- OR user is on the case (checked via function that bypasses RLS)
+    OR is_user_on_case(cases.id, auth.uid())
   );
 
 -- ============================================
 -- 15. RLS Policies for case_users
 -- ============================================
--- Users can view case_users for cases they're part of
+-- Users can view case_users for cases in their company
+-- Fix: Check cases table instead of case_users to avoid recursion
 DROP POLICY IF EXISTS "Users can view case_users for their cases" ON case_users;
 CREATE POLICY "Users can view case_users for their cases"
   ON case_users FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM case_users cu
-      WHERE cu.case_id = case_users.case_id
-      AND cu.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_users.case_id
+      AND c.company_id = up.company_id
     )
   );
 
--- Users can add users to cases they're part of
+-- Users can add users to cases in their company
+-- Fix: Use security definer function to check if user is on case (avoids recursion)
 DROP POLICY IF EXISTS "Users can add users to their cases" ON case_users;
 CREATE POLICY "Users can add users to their cases"
   ON case_users FOR INSERT
   WITH CHECK (
+    -- Check that the case is in the user's company
     EXISTS (
-      SELECT 1 FROM case_users cu
-      WHERE cu.case_id = case_users.case_id
-      AND cu.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_users.case_id
+      AND c.company_id = up.company_id
     )
     -- Ensure added user is in the same company
     AND user_id IN (
-      SELECT up.id FROM user_profiles up
-      WHERE up.company_id IN (
+      SELECT up2.id FROM user_profiles up2
+      WHERE up2.company_id IN (
         SELECT company_id FROM user_profiles WHERE id = auth.uid()
       )
     )
+    -- Verify current user is on the case (using security definer function to avoid recursion)
+    AND (
+      -- User is the case creator
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_users.case_id
+        AND c2.user_id = auth.uid()
+      )
+      -- OR user is already on the case (checked via function that bypasses RLS)
+      OR is_user_on_case(case_users.case_id, auth.uid())
+    )
   );
 
--- Users can remove users from cases they're part of
+-- Users can remove users from cases in their company
+-- Fix: Use security definer function to check if user is on case (avoids recursion)
 DROP POLICY IF EXISTS "Users can remove users from their cases" ON case_users;
 CREATE POLICY "Users can remove users from their cases"
   ON case_users FOR DELETE
   USING (
+    -- Check that the case is in the user's company
     EXISTS (
-      SELECT 1 FROM case_users cu
-      WHERE cu.case_id = case_users.case_id
-      AND cu.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_users.case_id
+      AND c.company_id = up.company_id
+    )
+    -- Verify current user is on the case (using security definer function to avoid recursion)
+    AND (
+      -- User is the case creator
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_users.case_id
+        AND c2.user_id = auth.uid()
+      )
+      -- OR user is already on the case (checked via function that bypasses RLS)
+      OR is_user_on_case(case_users.case_id, auth.uid())
     )
   );
 
 -- ============================================
 -- 16. RLS Policies for case_templates
 -- ============================================
--- Users can view case_templates for cases they're part of
+-- Users can view case_templates for cases in their company
+-- Fix: Check cases table instead of case_users to avoid recursion
 DROP POLICY IF EXISTS "Users can view case_templates for their cases" ON case_templates;
 CREATE POLICY "Users can view case_templates for their cases"
   ON case_templates FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = case_templates.case_id
-      AND case_users.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_templates.case_id
+      AND c.company_id = up.company_id
+    )
+    -- Verify user is on the case (using security definer function)
+    AND (
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_templates.case_id
+        AND c2.user_id = auth.uid()
+      )
+      OR is_user_on_case(case_templates.case_id, auth.uid())
     )
   );
 
@@ -370,9 +431,19 @@ CREATE POLICY "Users can add templates to their cases"
   ON case_templates FOR INSERT
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = case_templates.case_id
-      AND case_users.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_templates.case_id
+      AND c.company_id = up.company_id
+    )
+    -- Verify user is on the case (using security definer function)
+    AND (
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_templates.case_id
+        AND c2.user_id = auth.uid()
+      )
+      OR is_user_on_case(case_templates.case_id, auth.uid())
     )
   );
 
@@ -382,9 +453,19 @@ CREATE POLICY "Users can update case_templates for their cases"
   ON case_templates FOR UPDATE
   USING (
     EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = case_templates.case_id
-      AND case_users.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_templates.case_id
+      AND c.company_id = up.company_id
+    )
+    -- Verify user is on the case (using security definer function)
+    AND (
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_templates.case_id
+        AND c2.user_id = auth.uid()
+      )
+      OR is_user_on_case(case_templates.case_id, auth.uid())
     )
   );
 
@@ -394,9 +475,19 @@ CREATE POLICY "Users can delete case_templates for their cases"
   ON case_templates FOR DELETE
   USING (
     EXISTS (
-      SELECT 1 FROM case_users
-      WHERE case_users.case_id = case_templates.case_id
-      AND case_users.user_id = auth.uid()
+      SELECT 1 FROM cases c
+      JOIN user_profiles up ON up.id = auth.uid()
+      WHERE c.id = case_templates.case_id
+      AND c.company_id = up.company_id
+    )
+    -- Verify user is on the case (using security definer function)
+    AND (
+      EXISTS (
+        SELECT 1 FROM cases c2
+        WHERE c2.id = case_templates.case_id
+        AND c2.user_id = auth.uid()
+      )
+      OR is_user_on_case(case_templates.case_id, auth.uid())
     )
   );
 
