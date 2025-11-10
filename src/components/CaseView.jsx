@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import ChatBot from './ChatBot'
 import DocumentSidebar from './DocumentSidebar'
 import TemplateSidebar from './TemplateSidebar'
-import { DocumentProvider } from '../context/DocumentContext'
-import { TemplateProvider } from '../context/TemplateContext'
-import { getCase, updateCaseMetadata } from '../services/caseService'
-import { useTemplates } from '../context/TemplateContext'
+import DraftSidebar from './DraftSidebar'
+import { DocumentProvider, useDocuments } from '../context/DocumentContext'
+import { TemplateProvider, useTemplates } from '../context/TemplateContext'
+import { getCase, updateCaseMetadata, getCaseMessages } from '../services/caseService'
 import { CHAT_TYPES } from '../config/chatTypes'
 
 function CaseView() {
@@ -116,7 +116,7 @@ function CaseView() {
         onTemplateChange={handleTemplateChange}
       >
         <div className="h-screen w-screen bg-black flex">
-          {/* Both Sidebars Side by Side */}
+          {/* Left Sidebars */}
           <DocumentSidebar />
           <TemplateSidebar />
           
@@ -135,9 +135,56 @@ function CaseView() {
               onChatTypeChange={handleChatTypeChange}
             />
           </div>
+
+          {/* Right Sidebar - Drafts */}
+          <DraftSidebarWrapper 
+            caseId={caseId}
+            caseData={caseData}
+          />
         </div>
       </TemplateProvider>
     </DocumentProvider>
+  )
+}
+
+// Wrapper component to provide context data to DraftSidebar
+function DraftSidebarWrapper({ caseId, caseData }) {
+  const { documents } = useDocuments()
+  const { selectedTemplate, getTemplate } = useTemplates()
+  const [chatMessages, setChatMessages] = useState([])
+
+  useEffect(() => {
+    if (caseId) {
+      loadMessages()
+    }
+  }, [caseId])
+
+  const loadMessages = async () => {
+    try {
+      const messages = await getCaseMessages(caseId)
+      const formattedMessages = messages.map(msg => ({
+        id: msg.id,
+        text: msg.text,
+        sender: msg.sender,
+        timestamp: new Date(msg.created_at)
+      }))
+      setChatMessages(formattedMessages)
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
+  }
+
+  const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
+
+  return (
+    <DraftSidebar
+      caseId={caseId}
+      caseData={caseData}
+      chatMessages={chatMessages}
+      documents={documents}
+      template={selectedTemplateData}
+      templateId={selectedTemplate}
+    />
   )
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-function ChatInput({ onSendMessage, disabled = false }) {
+function ChatInput({ onSendMessage, disabled = false, onGenerateDraft, hasTemplate = false, isGeneratingDraft = false }) {
   const [inputValue, setInputValue] = useState('')
 
   const handleSubmit = (e) => {
@@ -29,6 +29,15 @@ function ChatInput({ onSendMessage, disabled = false }) {
         disabled={disabled}
         className="flex-1 px-4 py-3 bg-black text-white border border-blue-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-900 focus:border-red-900 placeholder-white placeholder-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
       />
+      <button
+        type="button"
+        onClick={onGenerateDraft}
+        disabled={!hasTemplate || disabled || isGeneratingDraft}
+        title={!hasTemplate ? "Please select a template first" : "Generate draft letter"}
+        className="px-4 py-3 bg-blue-900 text-white rounded-lg font-medium hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:ring-offset-2 focus:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-blue-800 text-sm"
+      >
+        {isGeneratingDraft ? 'Generating...' : 'Generate'}
+      </button>
       <button
         type="submit"
         disabled={!inputValue.trim() || disabled}

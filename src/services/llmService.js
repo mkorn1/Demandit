@@ -65,16 +65,17 @@ export async function callLLM(prompt, options = {}) {
 }
 
 /**
- * Generates a legal demand letter using chat messages and documents
+ * Generates a legal demand letter using chat messages, documents, and case contact info
  * @param {Array} chatMessages - Array of chat message objects
  * @param {Array} documents - Array of uploaded document objects
+ * @param {Object} caseData - Case data object containing contact_info
  * @param {Object} template - Optional template object with content to use as format guide
  * @returns {Promise<string>} The generated demand letter
  */
-export async function generateLegalDemandLetter(chatMessages, documents = [], template = null) {
+export async function generateLegalDemandLetter(chatMessages, documents = [], caseData = null, template = null) {
   let systemPrompt = `You are an expert legal assistant specializing in drafting professional demand letters. 
 Your task is to create a clear, professional, and legally sound demand letter based on the information provided 
-in the conversation and any uploaded documents.
+in the conversation, case contact information, and any uploaded documents.
 
 Guidelines for the demand letter:
 1. Use formal, professional language
@@ -84,18 +85,19 @@ Guidelines for the demand letter:
 5. Mention potential legal consequences if the demand is not met
 6. Maintain a professional but firm tone
 7. Include all relevant details from the conversation and documents
-8. Structure the letter with proper formatting (date, recipient, subject, body, closing)`
+8. Structure the letter with proper formatting (date, recipient, subject, body, closing)
+9. Use the exact contact information provided in the case details`
 
   if (template && template.content) {
-    systemPrompt += `\n\nIMPORTANT: Use the following template as the exact format and structure for your output. 
-Fill in the placeholders (marked with brackets like [Your Name], [Date], etc.) with the actual information from 
-the conversation and case details. Follow the template's structure, tone, and sections precisely:
+    systemPrompt += `\n\nIMPORTANT: Use the following template as a style and format guide for your output. 
+The template shows the structure, tone, and sections you should follow. However, you should generate a complete letter 
+using the actual information from the case details, conversation, and documents - do not use placeholder text. 
+Follow the template's structure and style, but fill it with real information:
 
-TEMPLATE:
+TEMPLATE (use as style guide):
 ${template.content}
 
-Fill in all placeholders with real information from the conversation and documents. Maintain the exact structure 
-and formatting of the template while replacing placeholders with actual data.`
+Generate a complete, professional letter following this template's structure and style, using all the actual information provided.`
   } else {
     systemPrompt += `\n\nFormat the response as a complete, ready-to-use demand letter.`
   }
@@ -120,19 +122,40 @@ and formatting of the template while replacing placeholders with actual data.`
     })
     .join('\n\n---\n\n')
 
+  // Extract case contact information
+  let contactInfoText = ''
+  if (caseData && caseData.contact_info) {
+    const contact = caseData.contact_info
+    contactInfoText = `CASE CONTACT INFORMATION:
+
+Your Information:
+- Name: ${contact.yourName || 'Not provided'}
+- Address: ${contact.yourAddress || 'Not provided'}
+- Phone: ${contact.yourPhone || 'Not provided'}
+- Email: ${contact.yourEmail || 'Not provided'}
+
+Recipient Information:
+- Name: ${contact.recipientName || 'Not provided'}
+- Title: ${contact.recipientTitle || 'Not provided'}
+- Company: ${contact.recipientCompany || 'Not provided'}
+- Address: ${contact.recipientAddress || 'Not provided'}`
+  }
+
   let prompt = `Please generate a legal demand letter based on the following information:
 
-CONVERSATION HISTORY:
+${contactInfoText ? `${contactInfoText}\n\n` : ''}CONVERSATION HISTORY:
 ${conversationText || 'No conversation history provided.'}
 
 ${documents.length > 0 ? `\nUPLOADED DOCUMENTS:\n${documentTexts}` : '\nNo documents were uploaded.'}`
 
   if (template && template.content) {
-    prompt += `\n\nUse the provided template format and fill in all placeholders with the actual information from the conversation and documents. 
-Maintain the exact structure and formatting of the template.`
+    prompt += `\n\nUse the provided template as a style and format guide. Generate a complete letter following the template's structure 
+and style, using all the actual information from the case details, conversation, and documents. Do not include placeholder text - 
+use the real information provided above.`
   } else {
-    prompt += `\n\nPlease create a comprehensive demand letter that incorporates all relevant information from the conversation and documents. 
-Make sure the letter is professional, clear, and actionable.`
+    prompt += `\n\nPlease create a comprehensive demand letter that incorporates all relevant information from the case details, 
+conversation, and documents. Make sure the letter is professional, clear, and actionable. Use the exact contact information 
+provided in the case details.`
   }
 
   return await callLLM(prompt, {

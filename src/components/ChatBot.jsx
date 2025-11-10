@@ -144,7 +144,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
         
         // Generate the demand letter with template if selected
-        const demandLetter = await generateLegalDemandLetter(allMessages, documents, selectedTemplateData)
+        const demandLetter = await generateLegalDemandLetter(allMessages, documents, caseData, selectedTemplateData)
         
         // Remove loading message and add the generated letter
         const botMessage = {
@@ -199,6 +199,12 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
     }
   }
 
+  const handleGenerateDraft = () => {
+    // The DraftSidebar handles generation, so this button can just be a visual indicator
+    // or we can scroll to/highlight the sidebar
+    // For now, we'll keep it simple - the sidebar has its own generate button
+  }
+
   return (
     <div className="flex flex-col flex-1 bg-black overflow-hidden">
       {/* Messages Container */}
@@ -214,7 +220,13 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
 
       {/* Input Area */}
       <div className="border-t border-blue-900 p-4 bg-black">
-        <ChatInput onSendMessage={handleSendMessage} disabled={isGenerating} />
+        <ChatInput 
+          onSendMessage={handleSendMessage} 
+          disabled={isGenerating}
+          onGenerateDraft={handleGenerateDraft}
+          hasTemplate={!!selectedTemplate}
+          isGeneratingDraft={false}
+        />
       </div>
     </div>
   )
