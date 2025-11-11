@@ -1,5 +1,7 @@
 # DemandIt!
 
+![DemandIt Logo](./dema.png)
+
 A modern React-based web application for managing legal cases and generating demand letters using AI. Built with authentication, case management, and persistent chat history.
 
 ## Features
@@ -124,6 +126,57 @@ npm run build
 ```
 
 The built files will be in the `dist` directory.
+
+## Deployment
+
+### Deploy to Vercel
+
+This project is configured for easy deployment to Vercel.
+
+#### Option 1: Deploy via Vercel CLI
+
+1. Install Vercel CLI globally:
+```bash
+npm i -g vercel
+```
+
+2. Login to Vercel:
+```bash
+vercel login
+```
+
+3. Deploy:
+```bash
+vercel
+```
+
+4. Follow the prompts to link your project and deploy.
+
+#### Option 2: Deploy via Vercel Dashboard
+
+1. Push your code to GitHub (if not already done):
+```bash
+git add .
+git commit -m "Prepare for deployment"
+git push origin main
+```
+
+2. Go to [vercel.com](https://vercel.com) and sign in with your GitHub account.
+
+3. Click "Add New Project" and import your repository.
+
+4. Configure environment variables in the Vercel dashboard:
+   - Go to Project Settings → Environment Variables
+   - Add the following variables:
+     - `VITE_SUPABASE_URL` - Your Supabase project URL
+     - `VITE_SUPABASE_ANON_KEY` - Your Supabase anon key
+     - `VITE_OPENAI_API_KEY` - Your OpenAI API key
+
+5. Click "Deploy" - Vercel will automatically detect the Vite configuration and deploy your app.
+
+6. Your app will be live at a URL like `https://your-project-name.vercel.app`
+
+**Note**: The `vercel.json` configuration file ensures proper routing for the React Router SPA.
 
 ## Tech Stack
 
