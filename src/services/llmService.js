@@ -1,6 +1,8 @@
 // LLM Service for making API calls to language models
 // This service handles prompt engineering and API communication
 
+import { htmlToPlainText, plainTextToHtml } from '../utils/templateConverter'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.openai.com/v1'
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY
 
@@ -345,5 +347,134 @@ provided in the case details.`
     temperature: 0.5, // Lower temperature for more consistent legal writing
     maxTokens: 3000
   })
+}
+
+/**
+ * Parses user instruction to find referenced documents
+ * Looks for document names, file extensions, or phrases like "from document", "using the contract", etc.
+ * @param {string} instruction - User's editing instruction
+ * @param {Array} documents - Array of available document objects
+ * @returns {Array} Array of document objects that are referenced
+ */
+function findReferencedDocuments(instruction, documents) {
+  if (!documents || documents.length === 0) return []
+  
+  const instructionLower = instruction.toLowerCase()
+  const referencedDocs = []
+  
+  // Check each document to see if it's mentioned
+  documents.forEach(doc => {
+    const docNameLower = doc.name.toLowerCase()
+    const docNameWithoutExt = docNameLower.replace(/\.[^.]+$/, '') // Remove extension
+    
+    // Check for various patterns
+    const patterns = [
+      docNameLower, // Full filename
+      docNameWithoutExt, // Filename without extension
+      doc.name, // Original case filename
+    ]
+    
+    // Also check for common phrases
+    const phrasePatterns = [
+      `from ${docNameLower}`,
+      `from ${docNameWithoutExt}`,
+      `using ${docNameLower}`,
+      `using ${docNameWithoutExt}`,
+      `the ${docNameLower}`,
+      `the ${docNameWithoutExt}`,
+      `document ${docNameLower}`,
+      `${docNameLower} document`,
+    ]
+    
+    // Check if any pattern matches
+    const isReferenced = patterns.some(pattern => instructionLower.includes(pattern)) ||
+                        phrasePatterns.some(pattern => instructionLower.includes(pattern)) ||
+                        // Check for file extension mentions
+                        (docNameLower.includes('.') && instructionLower.includes(docNameLower.split('.').pop()))
+    
+    if (isReferenced) {
+      referencedDocs.push(doc)
+    }
+  })
+  
+  return referencedDocs
+}
+
+/**
+ * Edits an existing draft letter based on user instructions
+ * Uses minimal context by default - only includes documents if explicitly referenced
+ * @param {string} currentDraftContent - The current draft content to edit
+ * @param {string} userInstruction - User's instruction for what to change
+ * @param {Array} documents - Array of uploaded document objects (only included if referenced)
+ * @returns {Promise<string>} The edited draft content
+ */
+export async function editDraftContent(
+  currentDraftContent,
+  userInstruction,
+  documents = []
+) {
+  const systemPrompt = `You are an expert legal document editor specializing in demand letters.
+Your role is to edit and refine existing demand letters based on user instructions while maintaining:
+1. Professional legal tone and language
+2. Proper formatting and structure
+3. Legal accuracy and completeness
+4. All relevant case details and contact information (already present in the draft)
+
+CRITICAL EDITING RULES:
+- Preserve the overall structure and organization of the document
+- Maintain all contact information exactly as provided in the draft
+- Keep legal accuracy and professional tone
+- Only make changes that align with the user's instructions
+- Preserve formatting, spacing, and document structure
+- Do not remove important legal content unless explicitly requested
+- The draft already contains all necessary information from the case - you don't need additional context unless the user specifically references documents or other sources`
+
+  // Convert HTML to plain text for LLM processing
+  // This prevents the LLM from modifying HTML structure
+  const plainTextDraft = htmlToPlainText(currentDraftContent)
+  
+  // Find documents referenced in the instruction
+  const referencedDocuments = findReferencedDocuments(userInstruction, documents)
+  
+  // Build document context only if documents are referenced
+  let documentContext = ''
+  if (referencedDocuments.length > 0) {
+    const documentTexts = referencedDocuments.map(doc => {
+      if (doc.content && typeof doc.content === 'string') {
+        // For text-based documents, include the content
+        if (doc.type.startsWith('text/') || doc.type === 'application/json') {
+          return `Document: ${doc.name}\n${doc.content}`
+        } else {
+          return `Document: ${doc.name} (${doc.type}) - Content available but not extracted in text format`
+        }
+      } else {
+        return `Document: ${doc.name} (${doc.type}) - Content not available`
+      }
+    }).join('\n\n---\n\n')
+    
+    documentContext = `\n\nREFERENCED DOCUMENTS:\n${documentTexts}`
+  }
+
+  // Build the minimal prompt with plain text draft
+  let prompt = `You are editing an existing demand letter. Here is the current draft in plain text:
+
+=== CURRENT DRAFT ===
+${plainTextDraft}
+
+=== USER'S EDITING INSTRUCTION ===
+${userInstruction}${documentContext}
+
+CRITICAL: Return ONLY the complete edited draft content in plain text format. Maintain the exact same structure, line breaks, spacing, and organization as the original. Only make the specific changes requested by the user. Do not reformat, reorganize, or restructure the document. Do not include explanations or meta-commentary - just return the edited plain text draft.`
+
+  // Get edited plain text from LLM
+  const editedPlainText = await callLLM(prompt, {
+    systemPrompt,
+    model: 'gpt-4',
+    temperature: 0.3, // Lower temperature for more precise editing
+    maxTokens: 3000 // Reduced from 4000 since we're using less context
+  })
+
+  // Convert plain text back to HTML for the editor
+  return plainTextToHtml(editedPlainText)
 }
 

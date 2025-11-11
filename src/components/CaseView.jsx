@@ -20,6 +20,7 @@ function CaseView() {
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [showDraftModal, setShowDraftModal] = useState(false)
   const [selectedDraftId, setSelectedDraftId] = useState(null)
+  const [currentDraft, setCurrentDraft] = useState(null)
   const [draftSidebarRefreshKey, setDraftSidebarRefreshKey] = useState(0)
 
   useEffect(() => {
@@ -146,6 +147,11 @@ function CaseView() {
               selectedChatType={selectedChatType}
               onChatTypeChange={handleChatTypeChange}
               onDraftGenerated={handleDraftGenerated}
+              currentDraft={currentDraft}
+              onDraftUpdate={(updatedDraft) => {
+                setCurrentDraft(updatedDraft)
+                setDraftSidebarRefreshKey(prev => prev + 1)
+              }}
             />
           </div>
 
@@ -167,13 +173,20 @@ function CaseView() {
           onClose={() => {
             setShowDraftModal(false)
             setSelectedDraftId(null)
+            setCurrentDraft(null)
           }}
           caseId={caseId}
           caseData={caseData}
           draftId={selectedDraftId}
-          onDraftUpdate={() => {
-            // Refresh sidebar when draft is updated
+          onDraftUpdate={(updatedDraft) => {
+            setCurrentDraft(updatedDraft)
             setDraftSidebarRefreshKey(prev => prev + 1)
+          }}
+          onDraftLoad={(draft) => {
+            setCurrentDraft(draft)
+          }}
+          onSwitchToDraftEditor={() => {
+            handleChatTypeChange(CHAT_TYPES.DRAFT_EDITOR_AGENT.id)
           }}
         />
       </TemplateProvider>
@@ -225,7 +238,7 @@ function DraftSidebarWrapper({ caseId, caseData, refreshKey, onDraftSelect }) {
 }
 
 // Wrapper component to provide context data to DraftViewerModal
-function DraftViewerModalWrapper({ isOpen, onClose, caseId, caseData, draftId, onDraftUpdate }) {
+function DraftViewerModalWrapper({ isOpen, onClose, caseId, caseData, draftId, onDraftUpdate, onDraftLoad, onSwitchToDraftEditor }) {
   const { documents } = useDocuments()
   const { selectedTemplate, getTemplate } = useTemplates()
   const [chatMessages, setChatMessages] = useState([])
@@ -265,6 +278,8 @@ function DraftViewerModalWrapper({ isOpen, onClose, caseId, caseData, draftId, o
       templateId={selectedTemplate}
       draftId={draftId}
       onDraftUpdate={onDraftUpdate}
+      onDraftLoad={onDraftLoad}
+      onSwitchToDraftEditor={onSwitchToDraftEditor}
     />
   )
 }
@@ -299,6 +314,9 @@ function Header({ caseData, navigate, selectedChatType, onChatTypeChange }) {
               <option value="">Select ChatType</option>
               <option value={CHAT_TYPES.BASE_CASE_BOT.id}>
                 {CHAT_TYPES.BASE_CASE_BOT.name}
+              </option>
+              <option value={CHAT_TYPES.DRAFT_EDITOR_AGENT.id}>
+                {CHAT_TYPES.DRAFT_EDITOR_AGENT.name}
               </option>
             </select>
             <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">

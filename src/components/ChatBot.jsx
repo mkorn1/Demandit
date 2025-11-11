@@ -4,12 +4,21 @@ import ChatInput from './ChatInput'
 import { CHAT_TYPES } from '../config/chatTypes'
 import { useDocuments } from '../context/DocumentContext'
 import { useTemplates } from '../context/TemplateContext'
-import { generateLegalDemandLetter, chatAssistant, assembleDetailsSummary } from '../services/llmService'
+import { generateLegalDemandLetter, chatAssistant, assembleDetailsSummary, editDraftContent } from '../services/llmService'
 import { getCaseMessages, addCaseMessage, updateCaseMetadata } from '../services/caseService'
-import { generateDraft } from '../services/draftService'
+import { generateDraft, updateDraft } from '../services/draftService'
 import { getOrCreateCaseTemplate } from '../services/templateService'
 
-function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatTypeChange, onDraftGenerated }) {
+function ChatBot({ 
+  caseId, 
+  caseData, 
+  selectedChatType: externalChatType, 
+  onChatTypeChange, 
+  onDraftGenerated,
+  // Draft editor context
+  currentDraft = null,
+  onDraftUpdate = null
+}) {
   const { documents } = useDocuments()
   const { selectedTemplate, getTemplate } = useTemplates()
   const [messages, setMessages] = useState([])
@@ -42,7 +51,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       }])
       setLoading(false)
     }
-  }, [caseId, caseData])
+  }, [caseId, caseData, selectedChatType])
 
   const loadCaseData = async () => {
     try {
@@ -60,13 +69,22 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         }))
         setMessages(formattedMessages)
       } else {
-        // No messages yet, show welcome message
-        setMessages([{
-          id: 1,
-          text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI already have your contact information and the recipient's contact information from when you created this case, so I won't need to ask for that.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
-          sender: 'bot',
-          timestamp: new Date()
-        }])
+        // No messages yet, show welcome message based on chat type
+        const welcomeMessage = selectedChatType === CHAT_TYPES.DRAFT_EDITOR_AGENT.id
+          ? {
+              id: 1,
+              text: "Hello! I'm your Draft Editor Agent. I can help you edit and refine your demand letter draft.\n\nYou can ask me to:\n- Make the tone more formal or assertive\n- Add or remove specific content\n- Fix grammar and spelling\n- Improve clarity and structure\n- Adjust formatting\n- Add details from your case\n\nJust tell me what you'd like to change, and I'll update the draft for you. The changes will be saved automatically.",
+              sender: 'bot',
+              timestamp: new Date(),
+              metadata: { chatType: CHAT_TYPES.DRAFT_EDITOR_AGENT.id }
+            }
+          : {
+              id: 1,
+              text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI already have your contact information and the recipient's contact information from when you created this case, so I won't need to ask for that.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
+              sender: 'bot',
+              timestamp: new Date()
+            }
+        setMessages([welcomeMessage])
       }
 
       // Load selected chat type from metadata (if not provided externally)
@@ -100,7 +118,8 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         sender: message.sender,
         metadata: {
           isLoading: message.isLoading,
-          isError: message.isError
+          isError: message.isError,
+          chatType: message.metadata?.chatType || selectedChatType || null
         }
       })
     } catch (error) {
@@ -141,7 +160,8 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       id: Date.now(),
       text: messageText,
       sender: 'user',
-      timestamp: new Date()
+      timestamp: new Date(),
+      metadata: { chatType: selectedChatType || null }
     }
     
     setMessages(prev => [...prev, userMessage])
@@ -254,6 +274,101 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         })
         
         await saveMessage(errorMessage)
+      } finally {
+        setIsGenerating(false)
+      }
+    } else if (selectedChatType === CHAT_TYPES.DRAFT_EDITOR_AGENT.id) {
+      // Draft Editor Agent chat type
+      if (!currentDraft) {
+        // No draft available
+        const botResponse = {
+          id: Date.now() + 1,
+          text: 'No draft is currently open for editing. Please open a draft first to use the Draft Editor Agent.',
+          sender: 'bot',
+          timestamp: new Date(),
+          isError: true
+        }
+        setMessages(prev => [...prev, botResponse])
+        await saveMessage(botResponse)
+        return
+      }
+
+      setIsGenerating(true)
+      
+      // Add a loading message
+      const loadingMessage = {
+        id: Date.now() + 1,
+        text: 'Editing your draft...',
+        sender: 'bot',
+        timestamp: new Date(),
+        isLoading: true
+      }
+      setMessages(prev => [...prev, loadingMessage])
+
+      try {
+        // Edit the draft with minimal context
+        // Only documents are passed - they'll only be included if referenced in the instruction
+        const editedContent = await editDraftContent(
+          currentDraft.rendered_content,
+          messageText,
+          documents
+        )
+
+        // Update the draft
+        const updatedDraft = await updateDraft(currentDraft.id, editedContent)
+
+        // Remove loading message and add success response
+        const botMessage = {
+          id: Date.now() + 2,
+          text: `I've updated the draft according to your instructions. The changes have been saved automatically. You can continue editing or ask for more changes.`,
+          sender: 'bot',
+          timestamp: new Date(),
+          metadata: { chatType: CHAT_TYPES.DRAFT_EDITOR_AGENT.id }
+        }
+
+        setMessages(prev => {
+          const withoutLoading = prev.filter(msg => !msg.isLoading)
+          return [...withoutLoading, botMessage]
+        })
+
+        await saveMessage({
+          ...botMessage,
+          metadata: {
+            ...botMessage.metadata,
+            isLoading: false,
+            isError: false
+          }
+        })
+
+        // Notify parent to refresh draft
+        if (onDraftUpdate) {
+          onDraftUpdate(updatedDraft)
+        }
+      } catch (error) {
+        console.error('Error editing draft:', error)
+        
+        // Remove loading message and add error message
+        const errorMessage = {
+          id: Date.now() + 2,
+          text: `Error editing draft: ${error.message}. Please try again.`,
+          sender: 'bot',
+          timestamp: new Date(),
+          isError: true,
+          metadata: { chatType: CHAT_TYPES.DRAFT_EDITOR_AGENT.id }
+        }
+        
+        setMessages(prev => {
+          const withoutLoading = prev.filter(msg => !msg.isLoading)
+          return [...withoutLoading, errorMessage]
+        })
+        
+        await saveMessage({
+          ...errorMessage,
+          metadata: {
+            ...errorMessage.metadata,
+            isLoading: false
+          }
+        })
       } finally {
         setIsGenerating(false)
       }

@@ -4,7 +4,9 @@ import { generateLegalDemandLetter } from '../services/llmService'
 import { getCaseMessages } from '../services/caseService'
 import { exportToDOCX, exportToPDF } from '../services/exportService'
 import { getOrCreateCaseTemplate } from '../services/templateService'
+import { CHAT_TYPES } from '../config/chatTypes'
 import DocumentEditorModal from './DocumentEditorModal'
+import DraftEditorSplitView from './DraftEditorSplitView'
 
 function DraftViewerModal({ 
   isOpen, 
@@ -16,7 +18,9 @@ function DraftViewerModal({
   template,
   templateId,
   draftId,
-  onDraftUpdate
+  onDraftUpdate,
+  onDraftLoad,
+  onSwitchToDraftEditor
 }) {
   const [currentDraft, setCurrentDraft] = useState(null)
   const [versions, setVersions] = useState([])
@@ -26,6 +30,7 @@ function DraftViewerModal({
   const [isExporting, setIsExporting] = useState(false)
   const [showVersionPanel, setShowVersionPanel] = useState(false)
   const [error, setError] = useState(null)
+  const [showSplitView, setShowSplitView] = useState(false)
 
   // Load current draft and versions when modal opens
   useEffect(() => {
@@ -41,12 +46,20 @@ function DraftViewerModal({
         const specificDraft = await getDraft(draftId)
         setCurrentDraft(specificDraft)
         setSelectedVersionId(specificDraft.id)
+        // Notify parent of loaded draft
+        if (onDraftLoad) {
+          onDraftLoad(specificDraft)
+        }
       } else {
         // Otherwise load current draft
         const current = await getCurrentDraft(caseId)
         if (current) {
           setCurrentDraft(current)
           setSelectedVersionId(current.id)
+          // Notify parent of loaded draft
+          if (onDraftLoad) {
+            onDraftLoad(current)
+          }
         }
       }
 
@@ -158,7 +171,7 @@ function DraftViewerModal({
       
       // Notify parent of update
       if (onDraftUpdate) {
-        onDraftUpdate()
+        onDraftUpdate(updated)
       }
     } catch (err) {
       console.error('Error updating draft content:', err)
@@ -198,6 +211,10 @@ function DraftViewerModal({
       const version = await getDraft(versionId)
       setCurrentDraft(version)
       setSelectedVersionId(versionId)
+      // Notify parent of loaded draft
+      if (onDraftLoad) {
+        onDraftLoad(version)
+      }
     } catch (err) {
       console.error('Error loading version:', err)
       setError(err.message)
@@ -305,12 +322,28 @@ function DraftViewerModal({
 
   // Header actions
   const headerActions = (
-    <button
-      onClick={() => setShowVersionPanel(!showVersionPanel)}
-      className="px-3 py-1.5 bg-blue-900 text-white rounded-lg hover:bg-blue-800 text-sm border border-blue-800"
-    >
-      {showVersionPanel ? 'Hide' : 'Show'} Versions
-    </button>
+    <div className="flex items-center gap-2">
+      {currentDraft && (
+        <button
+          onClick={() => {
+            setShowSplitView(true)
+          }}
+          className="px-3 py-1.5 bg-purple-900 text-purple-200 rounded-lg hover:bg-purple-800 text-xs border border-purple-800 flex items-center gap-2 transition-colors cursor-pointer"
+          title="Open split-screen view with AI editor"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+          <span>AI Edit Available</span>
+        </button>
+      )}
+      <button
+        onClick={() => setShowVersionPanel(!showVersionPanel)}
+        className="px-3 py-1.5 bg-blue-900 text-white rounded-lg hover:bg-blue-800 text-sm border border-blue-800"
+      >
+        {showVersionPanel ? 'Hide' : 'Show'} Versions
+      </button>
+    </div>
   )
 
   // Empty state
@@ -393,6 +426,28 @@ function DraftViewerModal({
       </div>
     </>
   )
+
+  // If split view is requested, show the split view instead
+  if (showSplitView && currentDraft) {
+    return (
+      <DraftEditorSplitView
+        draftId={currentDraft.id}
+        caseId={caseId}
+        caseData={caseData}
+        onClose={() => {
+          setShowSplitView(false)
+          // Reload draft data to get latest changes
+          loadDraftData()
+        }}
+        onDraftUpdate={(updatedDraft) => {
+          setCurrentDraft(updatedDraft)
+          if (onDraftUpdate) {
+            onDraftUpdate(updatedDraft)
+          }
+        }}
+      />
+    )
+  }
 
   return (
     <DocumentEditorModal

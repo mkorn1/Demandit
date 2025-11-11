@@ -4,6 +4,11 @@ export const CHAT_TYPES = {
     id: 'base-case-bot',
     name: 'Base Case Bot',
     description: 'Generate a legal demand letter from chat and uploaded documents'
+  },
+  DRAFT_EDITOR_AGENT: {
+    id: 'draft-editor-agent',
+    name: 'Draft Editor Agent',
+    description: 'Edit and refine existing draft letters with AI assistance'
   }
 }
 
