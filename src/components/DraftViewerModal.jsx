@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { generateDraft, getCurrentDraft, getDraftVersions, saveDraft, regenerateDraft, deleteDraftVersion, getDraft } from '../services/draftService'
+import { generateDraft, getCurrentDraft, getDraftVersions, saveDraft, updateDraft, regenerateDraft, deleteDraftVersion, getDraft } from '../services/draftService'
 import { generateLegalDemandLetter } from '../services/llmService'
 import { getCaseMessages } from '../services/caseService'
 import { exportToDOCX, exportToPDF } from '../services/exportService'
 import { getOrCreateCaseTemplate } from '../services/templateService'
+import DocumentEditorModal from './DocumentEditorModal'
 
 function DraftViewerModal({ 
   isOpen, 
@@ -145,6 +146,26 @@ function DraftViewerModal({
     }
   }
 
+  const handleDraftContentSave = async (content) => {
+    if (!currentDraft) return
+
+    try {
+      const updated = await updateDraft(currentDraft.id, content)
+      setCurrentDraft(updated)
+      
+      // Update in versions list
+      setVersions(prev => prev.map(v => v.id === updated.id ? updated : v))
+      
+      // Notify parent of update
+      if (onDraftUpdate) {
+        onDraftUpdate()
+      }
+    } catch (err) {
+      console.error('Error updating draft content:', err)
+      throw err
+    }
+  }
+
   const handleSave = async () => {
     if (!currentDraft || currentDraft.status === 'saved') return
 
@@ -226,196 +247,173 @@ function DraftViewerModal({
     }
   }
 
-  if (!isOpen) return null
-
-  return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg border border-red-900 shadow-xl w-full max-w-6xl h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-red-900 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-white">Draft Letter</h2>
-            {currentDraft && (
-              <p className="text-sm text-gray-400 mt-1">
-                Version {currentDraft.version_number} • {currentDraft.status === 'saved' ? 'Saved' : 'Draft'}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowVersionPanel(!showVersionPanel)}
-              className="px-3 py-1.5 bg-blue-900 text-white rounded-lg hover:bg-blue-800 text-sm border border-blue-800"
-            >
-              {showVersionPanel ? 'Hide' : 'Show'} Versions
-            </button>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="px-6 py-3 bg-red-900/20 border-b border-red-900">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* Main Content */}
-        <div className="flex-1 overflow-hidden flex">
-          {/* Letter Content */}
-          <div className={`flex-1 overflow-y-auto p-6 ${showVersionPanel ? 'border-r border-red-900' : ''}`}>
-            {currentDraft ? (
-              <div className="prose prose-invert max-w-none">
-                <div className="whitespace-pre-wrap text-white leading-relaxed">
-                  {currentDraft.rendered_content}
+  // Version panel component
+  const versionPanel = showVersionPanel ? (
+    <>
+      <div className="p-4 border-b border-red-900">
+        <h3 className="text-lg font-semibold text-white">Versions</h3>
+      </div>
+      <div className="p-2">
+        {versions.length === 0 ? (
+          <p className="text-gray-400 text-sm p-4 text-center">No versions yet</p>
+        ) : (
+          <div className="space-y-2">
+            {versions.map((version) => (
+              <div
+                key={version.id}
+                className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                  selectedVersionId === version.id
+                    ? 'bg-blue-900/30 border-blue-800'
+                    : 'bg-gray-900 border-red-900 hover:bg-gray-800'
+                }`}
+                onClick={() => handleVersionSelect(version.id)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white font-medium">Version {version.version_number}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    version.status === 'saved' 
+                      ? 'bg-green-900/50 text-green-300 border border-green-800'
+                      : 'bg-yellow-900/50 text-yellow-300 border border-yellow-800'
+                  }`}>
+                    {version.status}
+                  </span>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center text-gray-400 py-12">
-                <p className="mb-4">No draft generated yet.</p>
+                <p className="text-gray-400 text-xs">
+                  {new Date(version.created_at).toLocaleDateString()} {new Date(version.created_at).toLocaleTimeString()}
+                </p>
+                {version.saved_at && (
+                  <p className="text-gray-500 text-xs mt-1">
+                    Saved: {new Date(version.saved_at).toLocaleDateString()}
+                  </p>
+                )}
                 <button
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  title={isGenerating ? 'Generating draft...' : 'Generate a new draft'}
-                  className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed relative group"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteVersion(version.id)
+                  }}
+                  className="mt-2 text-red-400 hover:text-red-300 text-xs"
                 >
-                  {isGenerating ? 'Generating...' : 'Generate Draft'}
-                  {/* Tooltip on hover when disabled */}
-                  {isGenerating && (
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
-                      Generating draft...
-                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
-                    </div>
-                  )}
+                  Delete
                 </button>
               </div>
-            )}
+            ))}
           </div>
+        )}
+      </div>
+    </>
+  ) : null
 
-          {/* Version Panel */}
-          {showVersionPanel && (
-            <div className="w-80 bg-black border-l border-red-900 overflow-y-auto">
-              <div className="p-4 border-b border-red-900">
-                <h3 className="text-lg font-semibold text-white">Versions</h3>
-              </div>
-              <div className="p-2">
-                {versions.length === 0 ? (
-                  <p className="text-gray-400 text-sm p-4 text-center">No versions yet</p>
-                ) : (
-                  <div className="space-y-2">
-                    {versions.map((version) => (
-                      <div
-                        key={version.id}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedVersionId === version.id
-                            ? 'bg-blue-900/30 border-blue-800'
-                            : 'bg-gray-900 border-red-900 hover:bg-gray-800'
-                        }`}
-                        onClick={() => handleVersionSelect(version.id)}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-white font-medium">Version {version.version_number}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded ${
-                            version.status === 'saved' 
-                              ? 'bg-green-900/50 text-green-300 border border-green-800'
-                              : 'bg-yellow-900/50 text-yellow-300 border border-yellow-800'
-                          }`}>
-                            {version.status}
-                          </span>
-                        </div>
-                        <p className="text-gray-400 text-xs">
-                          {new Date(version.created_at).toLocaleDateString()} {new Date(version.created_at).toLocaleTimeString()}
-                        </p>
-                        {version.saved_at && (
-                          <p className="text-gray-500 text-xs mt-1">
-                            Saved: {new Date(version.saved_at).toLocaleDateString()}
-                          </p>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteVersion(version.id)
-                          }}
-                          className="mt-2 text-red-400 hover:text-red-300 text-xs"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+  // Header actions
+  const headerActions = (
+    <button
+      onClick={() => setShowVersionPanel(!showVersionPanel)}
+      className="px-3 py-1.5 bg-blue-900 text-white rounded-lg hover:bg-blue-800 text-sm border border-blue-800"
+    >
+      {showVersionPanel ? 'Hide' : 'Show'} Versions
+    </button>
+  )
+
+  // Empty state
+  const emptyState = !currentDraft ? (
+    <div className="flex-1 flex items-center justify-center text-center text-gray-400 py-12">
+      <div>
+        <p className="mb-4">No draft generated yet.</p>
+        <button
+          onClick={handleGenerate}
+          disabled={isGenerating}
+          title={isGenerating ? 'Generating draft...' : 'Generate a new draft'}
+          className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed relative group"
+        >
+          {isGenerating ? 'Generating...' : 'Generate Draft'}
+          {isGenerating && (
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+              Generating draft...
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
             </div>
           )}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-red-900 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRegenerate}
-              disabled={isGenerating || !currentDraft}
-              title={!currentDraft ? 'Generate a draft first' : isGenerating ? 'Regenerating draft...' : 'Regenerate this draft'}
-              className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-800 relative group"
-            >
-              {isGenerating ? 'Regenerating...' : 'Regenerate'}
-              {/* Tooltip on hover when disabled */}
-              {(!currentDraft || isGenerating) && (
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
-                  {!currentDraft ? 'Generate a draft first' : 'Regenerating draft...'}
-                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
-                </div>
-              )}
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isSaving || !currentDraft || currentDraft?.status === 'saved'}
-              title={!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : isSaving ? 'Saving draft...' : 'Save this draft as a version'}
-              className="px-4 py-2 bg-green-900 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed border border-green-800 relative group"
-            >
-              {isSaving ? 'Saving...' : currentDraft?.status === 'saved' ? 'Saved' : 'Save as Version'}
-              {/* Tooltip on hover when disabled */}
-              {(isSaving || !currentDraft || currentDraft?.status === 'saved') && (
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
-                  {!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : 'Saving draft...'}
-                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
-                </div>
-              )}
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                onClick={() => handleExport('docx')}
-                disabled={isExporting || !currentDraft}
-                className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
-              >
-                {isExporting ? 'Exporting...' : 'Export DOCX'}
-              </button>
-            </div>
-            <button
-              onClick={() => handleExport('pdf')}
-              disabled={isExporting || !currentDraft}
-              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
-            >
-              {isExporting ? 'Exporting...' : 'Export PDF'}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 border border-gray-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        </button>
       </div>
     </div>
+  ) : null
+
+  // Footer actions
+  const footerActions = (
+    <>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleRegenerate}
+          disabled={isGenerating || !currentDraft}
+          title={!currentDraft ? 'Generate a draft first' : isGenerating ? 'Regenerating draft...' : 'Regenerate this draft'}
+          className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-800 relative group"
+        >
+          {isGenerating ? 'Regenerating...' : 'Regenerate'}
+          {(!currentDraft || isGenerating) && (
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+              {!currentDraft ? 'Generate a draft first' : 'Regenerating draft...'}
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+            </div>
+          )}
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={isSaving || !currentDraft || currentDraft?.status === 'saved'}
+          title={!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : isSaving ? 'Saving draft...' : 'Save this draft as a version'}
+          className="px-4 py-2 bg-green-900 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed border border-green-800 relative group"
+        >
+          {isSaving ? 'Saving...' : currentDraft?.status === 'saved' ? 'Saved' : 'Save as Version'}
+          {(isSaving || !currentDraft || currentDraft?.status === 'saved') && (
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+              {!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : 'Saving draft...'}
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+            </div>
+          )}
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleExport('docx')}
+          disabled={isExporting || !currentDraft}
+          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
+        >
+          {isExporting ? 'Exporting...' : 'Export DOCX'}
+        </button>
+        <button
+          onClick={() => handleExport('pdf')}
+          disabled={isExporting || !currentDraft}
+          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
+        >
+          {isExporting ? 'Exporting...' : 'Export PDF'}
+        </button>
+        <button
+          onClick={onClose}
+          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 border border-gray-700"
+        >
+          Close
+        </button>
+      </div>
+    </>
+  )
+
+  return (
+    <DocumentEditorModal
+      isOpen={isOpen}
+      onClose={onClose}
+      content={currentDraft?.rendered_content || ''}
+      onContentChange={() => {
+        // Content change is handled by auto-save
+      }}
+      onSave={handleDraftContentSave}
+      title="Draft Letter"
+      subtitle={currentDraft ? `Version ${currentDraft.version_number} • ${currentDraft.status === 'saved' ? 'Saved' : 'Draft'}` : null}
+      placeholder="Start editing your draft..."
+      autoSave={true}
+      autoSaveDelay={3000}
+      headerActions={headerActions}
+      footerActions={footerActions}
+      emptyState={emptyState}
+      sidePanel={versionPanel}
+      externalError={error}
+    />
   )
 }
 

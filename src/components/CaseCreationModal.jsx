@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 function CaseCreationModal({ isOpen, onClose, onCreateCase }) {
   const [formData, setFormData] = useState({
@@ -26,6 +26,22 @@ function CaseCreationModal({ isOpen, onClose, onCreateCase }) {
     e.preventDefault()
     onCreateCase(formData)
   }
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 

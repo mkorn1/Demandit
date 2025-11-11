@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { getPlainTextContent } from '../utils/templateConverter'
 
 // ============================================
 // Company Templates (shared across company)
@@ -240,5 +241,16 @@ export async function getOrCreateCaseTemplate(caseId, companyTemplateId) {
   // Otherwise, create a new case_template snapshot
   const caseTemplate = await addTemplateToCase(caseId, companyTemplateId)
   return caseTemplate.id
+}
+
+/**
+ * Get template content as plain text for LLM generation
+ * Converts HTML to plain text while preserving structure
+ * @param {Object} template - Template object with content field
+ * @returns {string} Plain text version of template content
+ */
+export function getTemplatePlainText(template) {
+  if (!template || !template.content) return ''
+  return getPlainTextContent(template.content)
 }
 

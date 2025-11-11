@@ -5,6 +5,7 @@ import {
   updateCompanyTemplate, 
   deleteCompanyTemplate 
 } from '../services/templateService'
+import { getHtmlContent } from '../utils/templateConverter'
 
 const TemplateContext = createContext()
 
@@ -149,18 +150,19 @@ Sincerely,
           id: t.id,
           name: t.name,
           type: t.type,
-          content: t.content,
+          content: getHtmlContent(t.content), // Convert to HTML for editor if plain text
           createdAt: new Date(t.created_at),
           isDefault: false
         }))
         setTemplates(formattedTemplates)
       } else {
         // Transform database format to match expected format
+        // Convert plain text to HTML if needed for editor compatibility
         const formattedTemplates = data.map(t => ({
           id: t.id,
           name: t.name,
           type: t.type,
-          content: t.content,
+          content: getHtmlContent(t.content), // Convert to HTML for editor if plain text
           createdAt: new Date(t.created_at),
           isDefault: false
         }))

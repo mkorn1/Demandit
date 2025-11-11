@@ -105,16 +105,15 @@ function DraftSidebar({ caseId, caseData, chatMessages, documents, template, tem
   }
 
   const handleVersionSelect = async (versionId) => {
-    if (versionId === selectedVersionId) return
-
     try {
-      const version = await getDraft(versionId)
-      setCurrentDraft(version)
-      setSelectedVersionId(versionId)
-      // Use parent callback if provided, otherwise use local modal
+      // Always open the editor modal when a version is clicked
       if (onDraftSelect) {
         onDraftSelect(versionId)
       } else {
+        // Fallback: load version and show local modal
+        const version = await getDraft(versionId)
+        setCurrentDraft(version)
+        setSelectedVersionId(versionId)
         setShowDraftModal(true)
       }
     } catch (err) {
@@ -216,7 +215,7 @@ function DraftSidebar({ caseId, caseData, chatMessages, documents, template, tem
         )}
 
         {/* Actions */}
-        <div className="px-4 py-3 border-b border-red-900 space-y-2">
+        <div className="px-4 py-3 border-b border-red-900">
           <button
             onClick={handleGenerate}
             disabled={isGenerating || !template}
@@ -232,65 +231,7 @@ function DraftSidebar({ caseId, caseData, chatMessages, documents, template, tem
               </div>
             )}
           </button>
-          {currentDraft && (
-            <>
-              <button
-                onClick={handleSave}
-                disabled={isSaving || currentDraft.status === 'saved'}
-                className="w-full px-3 py-2 bg-green-900 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium border border-green-800"
-              >
-                {isSaving ? 'Saving...' : currentDraft.status === 'saved' ? 'Saved' : 'Save as Version'}
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleExport('docx')}
-                  disabled={isExporting}
-                  className="flex-1 px-3 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-xs border border-gray-700"
-                >
-                  DOCX
-                </button>
-                <button
-                  onClick={() => handleExport('pdf')}
-                  disabled={isExporting}
-                  className="flex-1 px-3 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-xs border border-gray-700"
-                >
-                  PDF
-                </button>
-              </div>
-            </>
-          )}
         </div>
-
-        {/* Current Draft Info */}
-        {currentDraft && (
-          <div className="px-4 py-3 border-b border-red-900 bg-blue-900/10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-white font-medium text-sm">Current Draft</span>
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                currentDraft.status === 'saved' 
-                  ? 'bg-green-900/50 text-green-300 border border-green-800'
-                  : 'bg-yellow-900/50 text-yellow-300 border border-yellow-800'
-              }`}>
-                {currentDraft.status}
-            </span>
-            </div>
-            <p className="text-gray-400 text-xs">
-              Version {currentDraft.version_number} • {new Date(currentDraft.created_at).toLocaleDateString()}
-            </p>
-            <button
-              onClick={() => {
-                if (onDraftSelect) {
-                  onDraftSelect(currentDraft.id)
-                } else {
-                  setShowDraftModal(true)
-                }
-              }}
-              className="mt-2 w-full px-3 py-1.5 bg-blue-900 text-white rounded text-xs hover:bg-blue-800 border border-blue-800"
-            >
-              View Full Draft
-            </button>
-          </div>
-        )}
 
         {/* Versions List */}
         <div className="flex-1 overflow-y-auto">
@@ -359,6 +300,22 @@ function DraftSidebar({ caseId, caseData, chatMessages, documents, template, tem
 
 // Simple modal for viewing draft content
 function DraftViewerModal({ isOpen, onClose, draft, caseData }) {
+  // Handle Escape key to close modal
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen, onClose])
+
   if (!isOpen || !draft) return null
 
   return (

@@ -108,6 +108,30 @@ export async function getDraft(draftId) {
 }
 
 /**
+ * Update a draft's content
+ * @param {string} draftId - The draft ID
+ * @param {string} renderedContent - The updated content
+ * @returns {Promise<Object>} The updated draft
+ */
+export async function updateDraft(draftId, renderedContent) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('User not authenticated')
+
+  // RLS will enforce that user is part of the case
+  const { data, error } = await supabase
+    .from('demand_letter_drafts')
+    .update({
+      rendered_content: renderedContent
+    })
+    .eq('id', draftId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+/**
  * Save a draft (marks it as saved)
  * @param {string} draftId - The draft ID
  * @returns {Promise<Object>} The updated draft

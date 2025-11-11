@@ -261,15 +261,21 @@ Guidelines for the demand letter:
 9. Use the exact contact information provided in the case details`
 
   if (template && template.content) {
-    systemPrompt += `\n\nIMPORTANT: Use the following template as a style and format guide for your output. 
-The template shows the structure, tone, and sections you should follow. However, you should generate a complete letter 
-using the actual information from the case details, conversation, and documents - do not use placeholder text. 
-Follow the template's structure and style, but fill it with real information:
+    systemPrompt += `\n\nCRITICAL: You must maintain the EXACT structure and layout of the provided template.
 
-TEMPLATE (use as style guide):
+TEMPLATE STRUCTURE TO PRESERVE:
 ${template.content}
 
-Generate a complete, professional letter following this template's structure and style, using all the actual information provided.`
+STRUCTURE PRESERVATION RULES:
+1. Maintain the exact same section order as the template
+2. Preserve all formatting, spacing, and line breaks
+3. Keep the same paragraph structure and organization
+4. Replace placeholders (like [Your Name], [Date]) with actual information
+5. Do NOT reorganize, combine, or restructure sections
+6. Do NOT change the template's tone, style, or format
+7. Fill in placeholders while keeping everything else identical
+
+Your output should be structurally identical to the template, with only placeholders replaced by real information.`
   } else {
     systemPrompt += `\n\nFormat the response as a complete, ready-to-use demand letter.`
   }
@@ -323,9 +329,10 @@ ${conversationText || 'No conversation history provided.'}
 ${documents.length > 0 ? `\nUPLOADED DOCUMENTS:\n${documentTexts}` : '\nNo documents were uploaded.'}`
 
   if (template && template.content) {
-    prompt += `\n\nUse the provided template as a style and format guide. Generate a complete letter following the template's structure 
-and style, using all the actual information from the case details, conversation, and documents. Do not include placeholder text - 
-use the real information provided above.`
+    prompt += `\n\nIMPORTANT: The template structure has been provided in the system instructions. 
+Generate a complete letter that maintains the EXACT structure of the template, replacing all placeholders 
+with the actual information provided above. Do not include placeholder text - use the real information 
+from the case details, conversation, and documents.`
   } else {
     prompt += `\n\nPlease create a comprehensive demand letter that incorporates all relevant information from the case details, 
 conversation, and documents. Make sure the letter is professional, clear, and actionable. Use the exact contact information 

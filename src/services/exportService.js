@@ -1,8 +1,34 @@
 // Export service for generating DOCX and PDF files client-side
 
 /**
+ * Strip HTML tags and convert to plain text
+ * @param {string} html - HTML content
+ * @returns {string} Plain text content
+ */
+function stripHTML(html) {
+  if (!html) return ''
+  
+  // Create a temporary div element
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  
+  // Get text content and preserve line breaks
+  let text = tmp.textContent || tmp.innerText || ''
+  
+  // Convert common HTML entities
+  text = text.replace(/&nbsp;/g, ' ')
+  text = text.replace(/&amp;/g, '&')
+  text = text.replace(/&lt;/g, '<')
+  text = text.replace(/&gt;/g, '>')
+  text = text.replace(/&quot;/g, '"')
+  text = text.replace(/&#39;/g, "'")
+  
+  return text
+}
+
+/**
  * Export content to DOCX format
- * @param {string} content - The text content to export
+ * @param {string} content - The text or HTML content to export
  * @param {string} filename - The filename (without extension)
  */
 export async function exportToDOCX(content, filename = 'draft') {
@@ -10,8 +36,11 @@ export async function exportToDOCX(content, filename = 'draft') {
     // Dynamic import to avoid bundling if not used
     const { Document, Packer, Paragraph, TextRun } = await import('docx')
     
+    // Strip HTML if present
+    const plainText = stripHTML(content)
+    
     // Split content into paragraphs (by double newlines or single newlines)
-    const paragraphs = content
+    const paragraphs = plainText
       .split(/\n\s*\n/)
       .filter(p => p.trim())
       .map(text => 
@@ -35,7 +64,7 @@ export async function exportToDOCX(content, filename = 'draft') {
         new Paragraph({
           children: [
             new TextRun({
-              text: content,
+              text: plainText,
               font: 'Times New Roman',
               size: 22,
             }),
@@ -72,7 +101,7 @@ export async function exportToDOCX(content, filename = 'draft') {
 
 /**
  * Export content to PDF format
- * @param {string} content - The text content to export
+ * @param {string} content - The text or HTML content to export
  * @param {string} filename - The filename (without extension)
  */
 export async function exportToPDF(content, filename = 'draft') {
@@ -97,8 +126,11 @@ export async function exportToPDF(content, filename = 'draft') {
     const maxWidth = pageWidth - (margin * 2)
     const lineHeight = 7
 
+    // Strip HTML if present
+    const plainText = stripHTML(content)
+
     // Split content into lines that fit the page width
-    const lines = doc.splitTextToSize(content, maxWidth)
+    const lines = doc.splitTextToSize(plainText, maxWidth)
     
     let y = margin
     const pageBottom = pageHeight - margin
