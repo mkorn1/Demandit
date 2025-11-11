@@ -207,3 +207,38 @@ export async function deleteCaseTemplate(caseTemplateId) {
   if (error) throw error
 }
 
+/**
+ * Get or create a case template from a company template ID
+ * This ensures we have a case_template ID to use in drafts
+ * @param {string} caseId - The case ID
+ * @param {string|null} companyTemplateId - The company template ID (from templates table)
+ * @returns {Promise<string|null>} The case template ID, or null if companyTemplateId is null
+ */
+export async function getOrCreateCaseTemplate(caseId, companyTemplateId) {
+  if (!companyTemplateId) {
+    return null
+  }
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('User not authenticated')
+
+  // Check if a case_template already exists for this case and company template
+  const { data: existing, error: queryError } = await supabase
+    .from('case_templates')
+    .select('id')
+    .eq('case_id', caseId)
+    .eq('template_id', companyTemplateId)
+    .maybeSingle()
+
+  if (queryError) throw queryError
+
+  // If it exists, return its ID
+  if (existing) {
+    return existing.id
+  }
+
+  // Otherwise, create a new case_template snapshot
+  const caseTemplate = await addTemplateToCase(caseId, companyTemplateId)
+  return caseTemplate.id
+}
+

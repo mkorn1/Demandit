@@ -1,11 +1,37 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { 
+  getCompanyTemplates, 
+  createCompanyTemplate, 
+  updateCompanyTemplate, 
+  deleteCompanyTemplate 
+} from '../services/templateService'
 
 const TemplateContext = createContext()
 
 export function TemplateProvider({ children, initialSelectedTemplate = null, onTemplateChange = null }) {
-  const [templates, setTemplates] = useState([
+  const [templates, setTemplates] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [internalSelectedTemplate, setInternalSelectedTemplate] = useState(initialSelectedTemplate)
+  
+  // Load templates from database on mount
+  useEffect(() => {
+    loadTemplates()
+  }, [])
+  
+  // Sync internal state when initialSelectedTemplate changes (e.g., when loading a new case)
+  useEffect(() => {
+    if (initialSelectedTemplate !== null && initialSelectedTemplate !== undefined) {
+      setInternalSelectedTemplate(initialSelectedTemplate)
+    }
+  }, [initialSelectedTemplate])
+  
+  // Use controlled value if provided, otherwise use internal state
+  const selectedTemplate = initialSelectedTemplate !== null && initialSelectedTemplate !== undefined 
+    ? initialSelectedTemplate 
+    : internalSelectedTemplate
+  
+  const DEFAULT_TEMPLATES = [
     {
-      id: 'default-demand-letter',
       name: 'Standard Demand Letter',
       type: 'demand-letter',
       content: `[Your Name]
@@ -33,12 +59,9 @@ If this matter is not resolved within [number] days of receipt of this letter, I
 I look forward to your prompt response.
 
 Sincerely,
-[Your Name]`,
-      createdAt: new Date(),
-      isDefault: true
+[Your Name]`
     },
     {
-      id: 'payment-demand',
       name: 'Payment Demand Letter',
       type: 'demand-letter',
       content: `[Your Name]
@@ -70,12 +93,9 @@ If payment is not received by [deadline date], I will be forced to take legal ac
 I trust this matter can be resolved promptly.
 
 Sincerely,
-[Your Name]`,
-      createdAt: new Date(),
-      isDefault: true
+[Your Name]`
     },
     {
-      id: 'contract-breach',
       name: 'Contract Breach Notice',
       type: 'demand-letter',
       content: `[Your Name]
@@ -103,24 +123,56 @@ Pursuant to the terms of the Contract, you have [number] days from the date of t
 I look forward to your immediate attention to this matter.
 
 Sincerely,
-[Your Name]`,
-      createdAt: new Date(),
-      isDefault: true
+[Your Name]`
     }
-  ])
-  const [internalSelectedTemplate, setInternalSelectedTemplate] = useState(initialSelectedTemplate)
-  
-  // Sync internal state when initialSelectedTemplate changes (e.g., when loading a new case)
-  useEffect(() => {
-    if (initialSelectedTemplate !== null && initialSelectedTemplate !== undefined) {
-      setInternalSelectedTemplate(initialSelectedTemplate)
+  ]
+
+  const loadTemplates = async () => {
+    try {
+      setLoading(true)
+      const data = await getCompanyTemplates()
+      
+      // Auto-seed templates if none exist
+      if (data.length === 0) {
+        console.log('No templates found. Seeding default templates...')
+        for (const template of DEFAULT_TEMPLATES) {
+          try {
+            await createCompanyTemplate(template)
+            console.log(`✓ Seeded template: ${template.name}`)
+          } catch (error) {
+            console.error(`Error seeding template "${template.name}":`, error)
+          }
+        }
+        // Reload templates after seeding
+        const reloadedData = await getCompanyTemplates()
+        const formattedTemplates = reloadedData.map(t => ({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+          content: t.content,
+          createdAt: new Date(t.created_at),
+          isDefault: false
+        }))
+        setTemplates(formattedTemplates)
+      } else {
+        // Transform database format to match expected format
+        const formattedTemplates = data.map(t => ({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+          content: t.content,
+          createdAt: new Date(t.created_at),
+          isDefault: false
+        }))
+        setTemplates(formattedTemplates)
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error)
+      setTemplates([])
+    } finally {
+      setLoading(false)
     }
-  }, [initialSelectedTemplate])
-  
-  // Use controlled value if provided, otherwise use internal state
-  const selectedTemplate = initialSelectedTemplate !== null && initialSelectedTemplate !== undefined 
-    ? initialSelectedTemplate 
-    : internalSelectedTemplate
+  }
   
   const handleSetSelectedTemplate = (templateId) => {
     if (onTemplateChange) {
@@ -130,29 +182,51 @@ Sincerely,
     }
   }
 
-  const addTemplate = (template) => {
-    const newTemplate = {
-      ...template,
-      id: template.id || `template-${Date.now()}`,
-      createdAt: new Date(),
+  const addTemplate = async (template) => {
+    try {
+      const newTemplate = await createCompanyTemplate({
+        name: template.name,
+        type: template.type || 'demand-letter',
+        content: template.content
+      })
+      // Reload templates to get the new one
+      await loadTemplates()
+      return {
+        id: newTemplate.id,
+        name: newTemplate.name,
+        type: newTemplate.type,
+        content: newTemplate.content,
+        createdAt: new Date(newTemplate.created_at),
       isDefault: false
     }
-    setTemplates(prev => [...prev, newTemplate])
-    return newTemplate
+    } catch (error) {
+      console.error('Error creating template:', error)
+      throw error
+    }
   }
 
-  const updateTemplate = (templateId, updates) => {
-    setTemplates(prev =>
-      prev.map(template =>
-        template.id === templateId ? { ...template, ...updates } : template
-      )
-    )
+  const updateTemplate = async (templateId, updates) => {
+    try {
+      await updateCompanyTemplate(templateId, updates)
+      // Reload templates to get the updated one
+      await loadTemplates()
+    } catch (error) {
+      console.error('Error updating template:', error)
+      throw error
+    }
   }
 
-  const deleteTemplate = (templateId) => {
-    setTemplates(prev => prev.filter(template => template.id !== templateId))
+  const deleteTemplate = async (templateId) => {
+    try {
+      await deleteCompanyTemplate(templateId)
+      // Reload templates to reflect deletion
+      await loadTemplates()
     if (selectedTemplate === templateId) {
       handleSetSelectedTemplate(null)
+      }
+    } catch (error) {
+      console.error('Error deleting template:', error)
+      throw error
     }
   }
 
@@ -164,12 +238,14 @@ Sincerely,
     <TemplateContext.Provider
       value={{
         templates,
+        loading,
         selectedTemplate,
         addTemplate,
         updateTemplate,
         deleteTemplate,
         getTemplate,
-        setSelectedTemplate: handleSetSelectedTemplate
+        setSelectedTemplate: handleSetSelectedTemplate,
+        refreshTemplates: loadTemplates
       }}
     >
       {children}

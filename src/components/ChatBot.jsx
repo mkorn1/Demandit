@@ -6,8 +6,10 @@ import { useDocuments } from '../context/DocumentContext'
 import { useTemplates } from '../context/TemplateContext'
 import { generateLegalDemandLetter, chatAssistant, assembleDetailsSummary } from '../services/llmService'
 import { getCaseMessages, addCaseMessage, updateCaseMetadata } from '../services/caseService'
+import { generateDraft } from '../services/draftService'
+import { getOrCreateCaseTemplate } from '../services/templateService'
 
-function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatTypeChange }) {
+function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatTypeChange, onDraftGenerated }) {
   const { documents } = useDocuments()
   const { selectedTemplate, getTemplate } = useTemplates()
   const [messages, setMessages] = useState([])
@@ -34,7 +36,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
       // Fallback for when no caseId (shouldn't happen in normal flow)
       setMessages([{
         id: 1,
-        text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
+        text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI already have your contact information and the recipient's contact information from when you created this case, so I won't need to ask for that.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
         sender: 'bot',
         timestamp: new Date()
       }])
@@ -61,7 +63,7 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         // No messages yet, show welcome message
         setMessages([{
           id: 1,
-          text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
+          text: "Hello! I'm your legal assistant. I'll help you gather all the details and evidence needed for your demand letter.\n\nI already have your contact information and the recipient's contact information from when you created this case, so I won't need to ask for that.\n\nI'll ask you questions about:\n- The facts of your case\n- The legal basis for your demand\n- The specific amount or action you're seeking\n- Timeline of events\n- Supporting evidence\n\nOnce we have all the information, I'll assemble everything and generate your demand letter. Let's get started!",
           sender: 'bot',
           timestamp: new Date()
         }])
@@ -165,24 +167,10 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
 
         // If user explicitly requests generation, generate the letter
         if (isGenerateRequest) {
-          // First assemble details summary if not already done
+          // Assemble details summary internally (for LLM use, not displayed in chat)
           if (!detailsSummary) {
             const summary = await assembleDetailsSummary(allMessages, documents, caseData)
             setDetailsSummary(summary)
-            
-            // Add summary message
-            const summaryMessage = {
-              id: Date.now() + 2,
-              text: `**Summary of Collected Details and Evidence:**\n\n${summary}\n\n---\n\nGenerating your demand letter now...`,
-              sender: 'bot',
-              timestamp: new Date()
-            }
-            
-            setMessages(prev => {
-              const withoutLoading = prev.filter(msg => !msg.isLoading)
-              return [...withoutLoading, summaryMessage]
-            })
-            await saveMessage(summaryMessage)
           }
 
           // Get selected template if one is selected
@@ -191,10 +179,16 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
           // Generate the demand letter with template if selected
           const demandLetter = await generateLegalDemandLetter(allMessages, documents, caseData, selectedTemplateData)
           
+          // Convert company template ID to case template ID (or null)
+          const caseTemplateId = await getOrCreateCaseTemplate(caseId, selectedTemplate || null)
+          
+          // Save as draft
+          const newDraft = await generateDraft(caseId, demandLetter, caseTemplateId)
+          
           // Remove loading message and add the generated letter
           const botMessage = {
             id: Date.now() + 3,
-            text: demandLetter,
+            text: `Your demand letter has been generated and saved as Draft Version ${newDraft.version_number}.\n\nClick "View Draft" in the sidebar to see it, or it will open automatically.`,
             sender: 'bot',
             timestamp: new Date()
           }
@@ -206,6 +200,11 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
           
           await saveMessage(botMessage)
           setIsReadyToGenerate(false) // Reset after generation
+          
+          // Notify parent to open draft modal and refresh sidebar
+          if (onDraftGenerated) {
+            onDraftGenerated(newDraft)
+          }
         } else {
           // Use conversational assistant to gather details
           const assistantResponse = await chatAssistant(allMessages, documents, caseData)
@@ -276,12 +275,6 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
     }
   }
 
-  const handleGenerateDraft = () => {
-    // The DraftSidebar handles generation, so this button can just be a visual indicator
-    // or we can scroll to/highlight the sidebar
-    // For now, we'll keep it simple - the sidebar has its own generate button
-  }
-
   return (
     <div className="flex flex-col flex-1 bg-black overflow-hidden min-h-0">
       {/* Messages Container */}
@@ -313,9 +306,6 @@ function ChatBot({ caseId, caseData, selectedChatType: externalChatType, onChatT
         <ChatInput 
           onSendMessage={handleSendMessage} 
           disabled={isGenerating}
-          onGenerateDraft={handleGenerateDraft}
-          hasTemplate={!!selectedTemplate}
-          isGeneratingDraft={false}
           isReadyToGenerate={isReadyToGenerate}
         />
       </div>

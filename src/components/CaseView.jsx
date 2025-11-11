@@ -4,6 +4,7 @@ import ChatBot from './ChatBot'
 import DocumentSidebar from './DocumentSidebar'
 import TemplateSidebar from './TemplateSidebar'
 import DraftSidebar from './DraftSidebar'
+import DraftViewerModal from './DraftViewerModal'
 import { DocumentProvider, useDocuments } from '../context/DocumentContext'
 import { TemplateProvider, useTemplates } from '../context/TemplateContext'
 import { getCase, updateCaseMetadata, getCaseMessages } from '../services/caseService'
@@ -17,6 +18,9 @@ function CaseView() {
   const [error, setError] = useState('')
   const [selectedChatType, setSelectedChatType] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [showDraftModal, setShowDraftModal] = useState(false)
+  const [selectedDraftId, setSelectedDraftId] = useState(null)
+  const [draftSidebarRefreshKey, setDraftSidebarRefreshKey] = useState(0)
 
   useEffect(() => {
     loadCase()
@@ -85,6 +89,14 @@ function CaseView() {
     }
   }
 
+  const handleDraftGenerated = (newDraft) => {
+    // Open the draft modal with the new draft
+    setSelectedDraftId(newDraft.id)
+    setShowDraftModal(true)
+    // Trigger refresh of DraftSidebar
+    setDraftSidebarRefreshKey(prev => prev + 1)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
@@ -133,6 +145,7 @@ function CaseView() {
               caseData={caseData}
               selectedChatType={selectedChatType}
               onChatTypeChange={handleChatTypeChange}
+              onDraftGenerated={handleDraftGenerated}
             />
           </div>
 
@@ -140,15 +153,36 @@ function CaseView() {
           <DraftSidebarWrapper 
             caseId={caseId}
             caseData={caseData}
+            refreshKey={draftSidebarRefreshKey}
+            onDraftSelect={(draftId) => {
+              setSelectedDraftId(draftId)
+              setShowDraftModal(true)
+            }}
           />
         </div>
+
+        {/* Draft Viewer Modal */}
+        <DraftViewerModalWrapper
+          isOpen={showDraftModal}
+          onClose={() => {
+            setShowDraftModal(false)
+            setSelectedDraftId(null)
+          }}
+          caseId={caseId}
+          caseData={caseData}
+          draftId={selectedDraftId}
+          onDraftUpdate={() => {
+            // Refresh sidebar when draft is updated
+            setDraftSidebarRefreshKey(prev => prev + 1)
+          }}
+        />
       </TemplateProvider>
     </DocumentProvider>
   )
 }
 
 // Wrapper component to provide context data to DraftSidebar
-function DraftSidebarWrapper({ caseId, caseData }) {
+function DraftSidebarWrapper({ caseId, caseData, refreshKey, onDraftSelect }) {
   const { documents } = useDocuments()
   const { selectedTemplate, getTemplate } = useTemplates()
   const [chatMessages, setChatMessages] = useState([])
@@ -157,7 +191,7 @@ function DraftSidebarWrapper({ caseId, caseData }) {
     if (caseId) {
       loadMessages()
     }
-  }, [caseId])
+  }, [caseId, refreshKey])
 
   const loadMessages = async () => {
     try {
@@ -184,6 +218,53 @@ function DraftSidebarWrapper({ caseId, caseData }) {
       documents={documents}
       template={selectedTemplateData}
       templateId={selectedTemplate}
+      onDraftSelect={onDraftSelect}
+      refreshKey={refreshKey}
+    />
+  )
+}
+
+// Wrapper component to provide context data to DraftViewerModal
+function DraftViewerModalWrapper({ isOpen, onClose, caseId, caseData, draftId, onDraftUpdate }) {
+  const { documents } = useDocuments()
+  const { selectedTemplate, getTemplate } = useTemplates()
+  const [chatMessages, setChatMessages] = useState([])
+
+  useEffect(() => {
+    if (caseId && isOpen) {
+      loadMessages()
+    }
+  }, [caseId, isOpen])
+
+  const loadMessages = async () => {
+    try {
+      const messages = await getCaseMessages(caseId)
+      const formattedMessages = messages.map(msg => ({
+        id: msg.id,
+        text: msg.text,
+        sender: msg.sender,
+        timestamp: new Date(msg.created_at)
+      }))
+      setChatMessages(formattedMessages)
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
+  }
+
+  const selectedTemplateData = selectedTemplate ? getTemplate(selectedTemplate) : null
+
+  return (
+    <DraftViewerModal
+      isOpen={isOpen}
+      onClose={onClose}
+      caseId={caseId}
+      caseData={caseData}
+      chatMessages={chatMessages}
+      documents={documents}
+      template={selectedTemplateData}
+      templateId={selectedTemplate}
+      draftId={draftId}
+      onDraftUpdate={onDraftUpdate}
     />
   )
 }

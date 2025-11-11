@@ -3,6 +3,7 @@ import { generateDraft, getCurrentDraft, getDraftVersions, saveDraft, regenerate
 import { generateLegalDemandLetter } from '../services/llmService'
 import { getCaseMessages } from '../services/caseService'
 import { exportToDOCX, exportToPDF } from '../services/exportService'
+import { getOrCreateCaseTemplate } from '../services/templateService'
 
 function DraftViewerModal({ 
   isOpen, 
@@ -12,7 +13,9 @@ function DraftViewerModal({
   chatMessages, 
   documents, 
   template,
-  templateId 
+  templateId,
+  draftId,
+  onDraftUpdate
 }) {
   const [currentDraft, setCurrentDraft] = useState(null)
   const [versions, setVersions] = useState([])
@@ -28,15 +31,22 @@ function DraftViewerModal({
     if (isOpen && caseId) {
       loadDraftData()
     }
-  }, [isOpen, caseId])
+  }, [isOpen, caseId, draftId])
 
   const loadDraftData = async () => {
     try {
-      // Load current draft
-      const current = await getCurrentDraft(caseId)
-      if (current) {
-        setCurrentDraft(current)
-        setSelectedVersionId(current.id)
+      // If a specific draftId is provided, load that draft
+      if (draftId) {
+        const specificDraft = await getDraft(draftId)
+        setCurrentDraft(specificDraft)
+        setSelectedVersionId(specificDraft.id)
+      } else {
+        // Otherwise load current draft
+        const current = await getCurrentDraft(caseId)
+        if (current) {
+          setCurrentDraft(current)
+          setSelectedVersionId(current.id)
+        }
       }
 
       // Load all versions
@@ -63,14 +73,22 @@ function DraftViewerModal({
         template
       )
 
+      // Convert company template ID to case template ID (or null)
+      const caseTemplateId = await getOrCreateCaseTemplate(caseId, templateId || null)
+
       // Create new draft version
-      const newDraft = await generateDraft(caseId, renderedContent, templateId)
+      const newDraft = await generateDraft(caseId, renderedContent, caseTemplateId)
       
       setCurrentDraft(newDraft)
       setSelectedVersionId(newDraft.id)
       
       // Reload versions
       await loadDraftData()
+      
+      // Notify parent of update
+      if (onDraftUpdate) {
+        onDraftUpdate()
+      }
     } catch (err) {
       console.error('Error generating draft:', err)
       setError(err.message)
@@ -103,14 +121,22 @@ function DraftViewerModal({
         template
       )
 
+      // Convert company template ID to case template ID (or null)
+      const caseTemplateId = await getOrCreateCaseTemplate(caseId, templateId || null)
+
       // Create new draft version
-      const newDraft = await regenerateDraft(caseId, renderedContent, templateId)
+      const newDraft = await regenerateDraft(caseId, renderedContent, caseTemplateId)
       
       setCurrentDraft(newDraft)
       setSelectedVersionId(newDraft.id)
       
       // Reload versions
       await loadDraftData()
+      
+      // Notify parent of update
+      if (onDraftUpdate) {
+        onDraftUpdate()
+      }
     } catch (err) {
       console.error('Error regenerating draft:', err)
       setError(err.message)
@@ -131,6 +157,11 @@ function DraftViewerModal({
       
       // Update in versions list
       setVersions(prev => prev.map(v => v.id === saved.id ? saved : v))
+      
+      // Notify parent of update
+      if (onDraftUpdate) {
+        onDraftUpdate()
+      }
     } catch (err) {
       console.error('Error saving draft:', err)
       setError(err.message)
@@ -251,9 +282,17 @@ function DraftViewerModal({
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating}
-                  className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50"
+                  title={isGenerating ? 'Generating draft...' : 'Generate a new draft'}
+                  className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed relative group"
                 >
                   {isGenerating ? 'Generating...' : 'Generate Draft'}
+                  {/* Tooltip on hover when disabled */}
+                  {isGenerating && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+                      Generating draft...
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  )}
                 </button>
               </div>
             )}
@@ -322,16 +361,32 @@ function DraftViewerModal({
             <button
               onClick={handleRegenerate}
               disabled={isGenerating || !currentDraft}
-              className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-800"
+              title={!currentDraft ? 'Generate a draft first' : isGenerating ? 'Regenerating draft...' : 'Regenerate this draft'}
+              className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-800 relative group"
             >
               {isGenerating ? 'Regenerating...' : 'Regenerate'}
+              {/* Tooltip on hover when disabled */}
+              {(!currentDraft || isGenerating) && (
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+                  {!currentDraft ? 'Generate a draft first' : 'Regenerating draft...'}
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+                </div>
+              )}
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving || !currentDraft || currentDraft?.status === 'saved'}
-              className="px-4 py-2 bg-green-900 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed border border-green-800"
+              title={!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : isSaving ? 'Saving draft...' : 'Save this draft as a version'}
+              className="px-4 py-2 bg-green-900 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed border border-green-800 relative group"
             >
               {isSaving ? 'Saving...' : currentDraft?.status === 'saved' ? 'Saved' : 'Save as Version'}
+              {/* Tooltip on hover when disabled */}
+              {(isSaving || !currentDraft || currentDraft?.status === 'saved') && (
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-gray-700">
+                  {!currentDraft ? 'Generate a draft first' : currentDraft?.status === 'saved' ? 'This draft is already saved' : 'Saving draft...'}
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+                </div>
+              )}
             </button>
           </div>
           <div className="flex items-center gap-2">

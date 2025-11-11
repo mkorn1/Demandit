@@ -4,6 +4,7 @@ import { useTemplates } from '../context/TemplateContext'
 function TemplateSidebar() {
   const {
     templates,
+    loading,
     selectedTemplate,
     addTemplate,
     deleteTemplate,
@@ -15,9 +16,10 @@ function TemplateSidebar() {
   const [newTemplateName, setNewTemplateName] = useState('')
   const [newTemplateContent, setNewTemplateContent] = useState('')
 
-  const handleCreateTemplate = () => {
+  const handleCreateTemplate = async () => {
     if (newTemplateName.trim() && newTemplateContent.trim()) {
-      addTemplate({
+      try {
+        await addTemplate({
         name: newTemplateName,
         type: 'demand-letter',
         content: newTemplateContent
@@ -25,6 +27,10 @@ function TemplateSidebar() {
       setNewTemplateName('')
       setNewTemplateContent('')
       setIsCreating(false)
+      } catch (error) {
+        console.error('Error creating template:', error)
+        alert('Failed to create template. Please try again.')
+      }
     }
   }
 
@@ -107,7 +113,11 @@ function TemplateSidebar() {
 
       {/* Template List */}
       <div className="flex-1 overflow-y-auto">
-        {templates.length === 0 ? (
+        {loading ? (
+          <div className="p-4 text-center text-white opacity-60">
+            <p>Loading templates...</p>
+          </div>
+        ) : templates.length === 0 ? (
           <div className="p-4 text-center text-white opacity-60">
             <p>No templates available</p>
             <p className="text-sm mt-2">Click "+ Create Template" to get started</p>
@@ -128,11 +138,6 @@ function TemplateSidebar() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-white text-sm font-medium truncate">{template.name}</p>
-                      {template.isDefault && (
-                        <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded">
-                          Default
-                        </span>
-                      )}
                     </div>
                     <p className="text-gray-400 text-xs mt-1 capitalize">
                       {template.type?.replace('-', ' ')}
@@ -141,11 +146,17 @@ function TemplateSidebar() {
                       {template.createdAt.toLocaleDateString()}
                     </p>
                   </div>
-                  {!template.isDefault && (
                     <button
-                      onClick={(e) => {
+                    onClick={async (e) => {
                         e.stopPropagation()
-                        deleteTemplate(template.id)
+                      if (confirm(`Are you sure you want to delete "${template.name}"?`)) {
+                        try {
+                          await deleteTemplate(template.id)
+                        } catch (error) {
+                          console.error('Error deleting template:', error)
+                          alert('Failed to delete template. Please try again.')
+                        }
+                      }
                       }}
                       className="text-gray-400 hover:text-red-500 transition-colors ml-2"
                       title="Delete template"
@@ -154,7 +165,6 @@ function TemplateSidebar() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
-                  )}
                 </div>
               </div>
             ))}

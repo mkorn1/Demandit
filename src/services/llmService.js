@@ -86,7 +86,7 @@ Key information needed for a demand letter:
 - Specific amount being demanded OR specific action being demanded
 - Timeline of events
 - Evidence supporting the claim (documents, communications, etc.)
-- Contact information (sender and recipient) - check if this is already in case details
+- Contact information (sender and recipient) - This is ALREADY PROVIDED in case details, do NOT ask for it
 - Deadline for response (if not specified, suggest 10-30 days)
 
 When you have gathered sufficient information, you should:
@@ -106,22 +106,27 @@ Be conversational, professional, and thorough. Ask one or two questions at a tim
     ? documents.map(doc => `- ${doc.name} (${doc.type})`).join('\n')
     : 'No documents uploaded yet.'
 
-  // Extract case contact information
+  // Extract case contact information - provide FULL details
   let contactInfoSummary = ''
   if (caseData && caseData.contact_info) {
     const contact = caseData.contact_info
-    const hasYourInfo = contact.yourName || contact.yourAddress || contact.yourEmail
-    const hasRecipientInfo = contact.recipientName || contact.recipientCompany || contact.recipientAddress
-    
-    if (hasYourInfo || hasRecipientInfo) {
-      contactInfoSummary = `CASE CONTACT INFORMATION AVAILABLE:
-${hasYourInfo ? `- Your information: ${contact.yourName || 'Name missing'}, ${contact.yourEmail || 'Email missing'}` : '- Your information: Not provided'}
-${hasRecipientInfo ? `- Recipient: ${contact.recipientName || 'Name missing'} at ${contact.recipientCompany || 'Company missing'}` : '- Recipient information: Not provided'}`
-    } else {
-      contactInfoSummary = 'Contact information: Not yet provided in case details.'
-    }
+    contactInfoSummary = `FULL CONTACT INFORMATION (Already collected at case creation - DO NOT ask for this):
+
+YOUR CONTACT INFORMATION:
+- Name: ${contact.yourName || 'Not provided'}
+- Address: ${contact.yourAddress || 'Not provided'}
+- Phone: ${contact.yourPhone || 'Not provided'}
+- Email: ${contact.yourEmail || 'Not provided'}
+
+RECIPIENT CONTACT INFORMATION:
+- Name: ${contact.recipientName || 'Not provided'}
+- Title: ${contact.recipientTitle || 'Not provided'}
+- Company: ${contact.recipientCompany || 'Not provided'}
+- Address: ${contact.recipientAddress || 'Not provided'}
+
+IMPORTANT: All contact information has been provided during case creation. You should NOT ask the user for contact details. Use this information when generating the demand letter.`
   } else {
-    contactInfoSummary = 'Contact information: Not yet provided in case details.'
+    contactInfoSummary = 'Contact information: Not yet provided in case details. You may need to ask for contact information if it\'s required for the demand letter.'
   }
 
   const prompt = `You are helping to gather information for a demand letter. Here's what we have so far:
@@ -135,14 +140,14 @@ CONVERSATION HISTORY:
 ${conversationHistory || 'No conversation history yet.'}
 
 Based on the information above, please:
-1. Assess what information is already available
-2. Identify what's missing or needs clarification
+1. Assess what information is already available (note that contact information is already complete)
+2. Identify what's missing or needs clarification (DO NOT ask about contact information - it's already provided)
 3. Provide a helpful response that either:
-   - Asks specific questions about missing information, OR
+   - Asks specific questions about missing information (facts, legal basis, amount/action, timeline, evidence), OR
    - Confirms that all details are present and offers to summarize everything, OR
    - Provides a summary of all collected details and evidence if the user is ready
 
-Be concise but thorough. If information is missing, ask targeted questions. If everything seems complete, offer to summarize and confirm before generating the letter.`
+Be concise but thorough. Focus on gathering case facts, legal basis, demands, timeline, and evidence. Contact information is already complete and should not be requested. If everything seems complete, offer to summarize and confirm before generating the letter.`
 
   return await callLLM(prompt, {
     systemPrompt,
