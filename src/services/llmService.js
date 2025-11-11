@@ -110,19 +110,21 @@ Be conversational, professional, and thorough. Ask one or two questions at a tim
   let contactInfoSummary = ''
   if (caseData && caseData.contact_info) {
     const contact = caseData.contact_info
+    const your = contact.your || {}
+    const recipient = contact.recipient || {}
     contactInfoSummary = `FULL CONTACT INFORMATION (Already collected at case creation - DO NOT ask for this):
 
 YOUR CONTACT INFORMATION:
-- Name: ${contact.yourName || 'Not provided'}
-- Address: ${contact.yourAddress || 'Not provided'}
-- Phone: ${contact.yourPhone || 'Not provided'}
-- Email: ${contact.yourEmail || 'Not provided'}
+- Name: ${your.name || 'Not provided'}
+- Address: ${your.address || 'Not provided'}
+- Phone: ${your.phone || 'Not provided'}
+- Email: ${your.email || 'Not provided'}
 
 RECIPIENT CONTACT INFORMATION:
-- Name: ${contact.recipientName || 'Not provided'}
-- Title: ${contact.recipientTitle || 'Not provided'}
-- Company: ${contact.recipientCompany || 'Not provided'}
-- Address: ${contact.recipientAddress || 'Not provided'}
+- Name: ${recipient.name || 'Not provided'}
+- Title: ${recipient.title || 'Not provided'}
+- Company: ${recipient.company || 'Not provided'}
+- Address: ${recipient.address || 'Not provided'}
 
 IMPORTANT: All contact information has been provided during case creation. You should NOT ask the user for contact details. Use this information when generating the demand letter.`
   } else {
@@ -199,19 +201,21 @@ Format this as a clear, professional summary that can be reviewed before generat
   let contactInfoText = ''
   if (caseData && caseData.contact_info) {
     const contact = caseData.contact_info
+    const your = contact.your || {}
+    const recipient = contact.recipient || {}
     contactInfoText = `CASE CONTACT INFORMATION:
 
 Your Information:
-- Name: ${contact.yourName || 'Not provided'}
-- Address: ${contact.yourAddress || 'Not provided'}
-- Phone: ${contact.yourPhone || 'Not provided'}
-- Email: ${contact.yourEmail || 'Not provided'}
+- Name: ${your.name || 'Not provided'}
+- Address: ${your.address || 'Not provided'}
+- Phone: ${your.phone || 'Not provided'}
+- Email: ${your.email || 'Not provided'}
 
 Recipient Information:
-- Name: ${contact.recipientName || 'Not provided'}
-- Title: ${contact.recipientTitle || 'Not provided'}
-- Company: ${contact.recipientCompany || 'Not provided'}
-- Address: ${contact.recipientAddress || 'Not provided'}`
+- Name: ${recipient.name || 'Not provided'}
+- Title: ${recipient.title || 'Not provided'}
+- Company: ${recipient.company || 'Not provided'}
+- Address: ${recipient.address || 'Not provided'}`
   }
 
   const prompt = `Please assemble a comprehensive summary of all details and evidence collected for this demand letter:
@@ -294,19 +298,21 @@ Generate a complete, professional letter following this template's structure and
   let contactInfoText = ''
   if (caseData && caseData.contact_info) {
     const contact = caseData.contact_info
+    const your = contact.your || {}
+    const recipient = contact.recipient || {}
     contactInfoText = `CASE CONTACT INFORMATION:
 
 Your Information:
-- Name: ${contact.yourName || 'Not provided'}
-- Address: ${contact.yourAddress || 'Not provided'}
-- Phone: ${contact.yourPhone || 'Not provided'}
-- Email: ${contact.yourEmail || 'Not provided'}
+- Name: ${your.name || 'Not provided'}
+- Address: ${your.address || 'Not provided'}
+- Phone: ${your.phone || 'Not provided'}
+- Email: ${your.email || 'Not provided'}
 
 Recipient Information:
-- Name: ${contact.recipientName || 'Not provided'}
-- Title: ${contact.recipientTitle || 'Not provided'}
-- Company: ${contact.recipientCompany || 'Not provided'}
-- Address: ${contact.recipientAddress || 'Not provided'}`
+- Name: ${recipient.name || 'Not provided'}
+- Title: ${recipient.title || 'Not provided'}
+- Company: ${recipient.company || 'Not provided'}
+- Address: ${recipient.address || 'Not provided'}`
   }
 
   let prompt = `Please generate a legal demand letter based on the following information:
