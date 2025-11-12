@@ -2,6 +2,9 @@
 
 ![DemandIt Logo](./dema.png)
 
+### Demo Video
+[![Demo Vid](https://i.ytimg.com/vi/c_T43e2lF_8/hqdefault.jpg?sqp=-oaymwEjCNACELwBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLA2qUpz6rVGLVIUxP0vsfbSElKmlw)](https://www.youtube.com/watch?v=c_T43e2lF_8&pp=0gcJCQMKAYcqIYzv)
+
 A modern React-based web application for managing legal cases and generating demand letters using AI. Built with authentication, case management, and persistent chat history.
 
 ## Features
